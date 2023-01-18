@@ -1,0 +1,5 @@
+[flake8]
+ignore = ANN401,E203,E231,E501,W503
+import-order-style = google
+max-line-length = 80
+select = ANN,B,B9,BLK,C,E,F,I,W
