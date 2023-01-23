@@ -1,10 +1,9 @@
 [tool.poetry]
-name = "deep-reinforcement-learning-from-human-preferences"
+name = "Deep-Reinforcement-Learning-from-Human-Preferences"
 version = "0.1.0"
 description = ""
 authors = ["Your Name <you@example.com>"]
 readme = "README.md"
-packages = [{include = "deep_reinforcement_learning_from_human_preferences"}]
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -21,6 +20,7 @@ gymnasium = "^0.27.0"
 [tool.poetry.group.dev.dependencies]
 mypy = "^0.991"
 pytest-mock = "^3.10.0"
+pytest = "^7.2.1"
 
 [build-system]
 requires = ["poetry-core"]

@@ -2,7 +2,7 @@ import tempfile
 
 import nox
 
-locations = "tests", "noxfile.py"
+locations = "tests", "noxfile.py", "src"
 nox.options.sessions = "lint", "mypy", "tests"
 
 
@@ -46,3 +46,10 @@ def mypy(session):
     args = session.posargs or locations
     install_with_constraints(session, "mypy")
     session.run("mypy", *args)
+
+
+@nox.session(python=["3.10"])
+def tests(session) -> None:
+    args = session.posargs
+    session.run("poetry", "install", external=True)
+    session.run("pytest", *args)
