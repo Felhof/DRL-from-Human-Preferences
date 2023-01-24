@@ -1,4 +1,13 @@
+from dataclasses import dataclass
+
 import numpy as np
+
+
+@dataclass
+class Preference:
+    segment1: "Segment"
+    segment2: "Segment"
+    mu: float
 
 
 class Segment:
