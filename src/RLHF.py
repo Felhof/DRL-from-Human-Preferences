@@ -19,6 +19,7 @@ class RLHFWrapper:
         self.reward_model = None
         self.reward_model_queue = Queue()
         self.trajectory_queue = Queue()
+        self.current_trajectory = []
 
     def start_rlhf(self: "RLHFWrapper") -> None:
         feedback_collecting_process = multiprocessing.Process(
@@ -33,15 +34,22 @@ class RLHFWrapper:
     def reset(self):
         observation, info = self.environment.reset()
         self.current_observation = observation
+        self.current_trajectory = []
         return observation, info
 
     def step(self: "RLHFWrapper", action):
         if not self.reward_model_queue.empty():
             self.reward_model = self.reward_model_queue.get()
 
+        self.current_trajectory.append((self.current_observation, action))
+
         obs, _, terminated, truncated, info = self.environment.step(action)
-        reward = self.reward_model.get_reward(obs, action)
+        reward = self.reward_model.get_reward(self.current_observation, action)
 
         self.current_observation = obs
+
+        if terminated or truncated:
+            self.trajectory_queue.put(self.current_trajectory)
+            self.current_trajectory = []
 
         return obs, reward, terminated, truncated, info
