@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from multiprocessing import Process, Queue
+from threading import Thread
 
 import numpy as np
 
@@ -27,7 +29,7 @@ class SegmentDB:
 
     def query_segment_pairs(self, n):
         assert (
-            len(self.segments) >= 2 * n
+                len(self.segments) >= 2 * n
         ), "Not enough segments to get that many pairs!"
 
         all_indices = list(range(len(self.segments)))
@@ -42,3 +44,24 @@ class SegmentDB:
             for index_pair in index_pairs
         ]
         return segment_pairs
+
+
+class FeedbackCollectionProcess(Process):
+
+    def __init__(self):
+        super().__init__()
+        self.segment_db = None
+        self.segment_queue = None
+        self.preference_elicitation = None
+
+    def run(self):
+        self.segment_db = SegmentDB()
+        self.segment_queue = Queue()
+        self.preference_elicitation = PreferenceElicitationThread()
+        self.preference_elicitation.run(queue=self.segment_queue)
+
+
+class PreferenceElicitationThread(Thread):
+
+    def run(self, queue=None):
+        pass

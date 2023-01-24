@@ -1,4 +1,7 @@
-from src.preferences import Segment, SegmentDB
+from unittest.mock import call
+
+from src.preferences import FeedbackCollectionProcess, Segment, SegmentDB
+import src.preferences
 
 
 def test_segment_stores_data_correctly(mocker):
@@ -72,3 +75,24 @@ def test_segmentdb_query_segment_pairs_returns_n_pairs_of_unique_segments(mocker
     assert segment2 in segment_pair1 or segment_pair2
     assert segment3 in segment_pair1 or segment_pair2
     assert segment4 in segment_pair1 or segment_pair2
+
+
+def test_feedback_collection_process_run_initializes_segment_db(mocker):
+    mocker.patch("src.preferences.SegmentDB")
+
+    feedback_collection = FeedbackCollectionProcess()
+    feedback_collection.run()
+
+    assert src.preferences.SegmentDB.call_count == 1
+
+
+def test_feedback_collection_process_run_starts_preference_elicitation_thread(mocker):
+    segment_queue = mocker.Mock()
+    mocker.patch("src.preferences.PreferenceElicitationThread.run")
+
+    feedback_collection = FeedbackCollectionProcess()
+    feedback_collection.segment_queue = segment_queue
+    feedback_collection.run()
+
+    assert src.preferences.PreferenceElicitationThread.run.call_count == 1
+    src.preferences.PreferenceElicitationThread.run.assert_called_with(queue=segment_queue)
