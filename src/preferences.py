@@ -28,6 +28,9 @@ class SegmentDB:
     def __init__(self) -> None:
         self.segments = []
 
+    def __len__(self) -> int:
+        return len(self.segments)
+
     def store_segments(self, new_segments):
         self.segments.extend(new_segments)
 
@@ -64,6 +67,21 @@ class FeedbackCollectionProcess(Process):
         self.segment_db = None
         self.preference_elicitation = None
 
+    def _update_segment_db(self, trajectory):
+        segments = [
+            trajectory[i : i + SEGMENT_LENGTH]
+            for i in range(0, len(trajectory), SEGMENT_LENGTH)
+        ]
+        self.segment_db.store_segments(segments)
+
+    def _transfer_preference_from_queue_to_reward_modeller(self):
+        preference = self.preference_queue.get()
+        self.reward_modelling_queue.put(preference)
+
+    def _transfer_segment_from_db_to_queue(self):
+        segment_pair = self.segment_db.query_segment_pairs()[0]
+        self.segment_queue.put(segment_pair)
+
     def run(self):
         self.segment_db = SegmentDB()
         self.segment_queue = ThreadQueue()
@@ -73,25 +91,17 @@ class FeedbackCollectionProcess(Process):
         self.preference_elicitation.run(queue=self.preference_queue)
 
         while True:
-            if self.trajectory_queue.empty():
-                continue
+            if not self.trajectory_queue.empty():
+                msg = self.trajectory_queue.get()
+                if isinstance(msg, str) and msg == "END":
+                    break
+                self._update_segment_db(msg)
 
-            msg = self.trajectory_queue.get()
-            if isinstance(msg, str) and msg == "END":
-                break
-
-            segments = [
-                msg[i : i + SEGMENT_LENGTH] for i in range(0, len(msg), SEGMENT_LENGTH)
-            ]
-            self.segment_db.store_segments(segments)
-
-            segment_pair = self.segment_db.query_segment_pairs()[0]
-
-            self.segment_queue.put(segment_pair)
+            if len(self.segment_db) > 0:
+                self._transfer_segment_from_db_to_queue()
 
             if not self.preference_queue.empty():
-                preference = self.preference_queue.get()
-                self.reward_modelling_queue.put(preference)
+                self._transfer_preference_from_queue_to_reward_modeller()
 
 
 class PreferenceElicitationThread(Thread):
