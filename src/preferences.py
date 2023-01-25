@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-from multiprocessing import Process
-from multiprocessing import Queue as ProcessQueue
+from multiprocessing import Process, Queue
 from queue import Queue as ThreadQueue
 from threading import Thread
 
@@ -54,18 +53,12 @@ class SegmentDB:
 
 
 class FeedbackCollectionProcess(Process):
-    def __init__(self, trajectory_queue: ProcessQueue):
+    def __init__(self, trajectory_queue: Queue):
         super().__init__()
-        self.trajectory_queue: ProcessQueue = (
-            trajectory_queue  # for receiving trajectories
-        )
-        self.segment_queue = None  # for sending segments to preference elicitor
-        self.preference_queue = (
-            None  # for receiving preferences from preference elicitor
-        )
-        self.reward_modelling_queue = None  # for sending preferences to reward modeller
+        self.trajectory_queue: Queue = trajectory_queue
+        self.reward_modelling_queue = None
         self.segment_db = None
-        self.preference_elicitation = None
+        self.preference_elicitor = None
 
     def _update_segment_db(self, trajectory):
         segments = [
@@ -74,21 +67,10 @@ class FeedbackCollectionProcess(Process):
         ]
         self.segment_db.store_segments(segments)
 
-    def _transfer_preference_from_queue_to_reward_modeller(self):
-        preference = self.preference_queue.get()
-        self.reward_modelling_queue.put(preference)
-
-    def _transfer_segment_from_db_to_queue(self):
-        segment_pair = self.segment_db.query_segment_pairs()[0]
-        self.segment_queue.put(segment_pair)
-
     def run(self):
         self.segment_db = SegmentDB()
-        self.segment_queue = ThreadQueue()
-        self.preference_queue = ThreadQueue()
-        self.reward_modelling_queue = ProcessQueue()
-        self.preference_elicitation = PreferenceElicitationThread()
-        self.preference_elicitation.run(queue=self.preference_queue)
+        self.reward_modelling_queue = Queue()
+        self.preference_elicitor = PreferenceElicitor()
 
         while True:
             if not self.trajectory_queue.empty():
@@ -98,12 +80,17 @@ class FeedbackCollectionProcess(Process):
                 self._update_segment_db(msg)
 
             if len(self.segment_db) > 0:
-                self._transfer_segment_from_db_to_queue()
+                segment_pair = self.segment_db.query_segment_pairs()[0]
+                preference = self.preference_elicitor.ask_for_preference(segment_pair)
+                self.reward_modelling_queue.put(preference)
 
-            if not self.preference_queue.empty():
-                self._transfer_preference_from_queue_to_reward_modeller()
 
+class PreferenceElicitor:
+    def __init__(self):
+        pass
 
-class PreferenceElicitationThread(Thread):
     def run(self, queue=None):
+        pass
+
+    def ask_for_preference(self, segment_pair):
         pass
