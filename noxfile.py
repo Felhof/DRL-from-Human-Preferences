@@ -10,12 +10,20 @@ nox.options.sessions = "lint", "mypy", "tests"
 def black(session):
     args = session.posargs or locations
     install_with_constraints(session, "black")
-    session.run(trajectory_queue)
+    session.run("black", *args)
 
 
 def install_with_constraints(session, *args, **kwargs):
     with tempfile.NamedTemporaryFile() as requirements:
-        session.run(trajectory_queue)
+        session.run(
+            "poetry",
+            "export",
+            "--dev",
+            "--format=requirements.txt",
+            "--without-hashes",
+            f"--output={requirements.name}",
+            external=True,
+        )
         session.install(f"--constraint={requirements.name}", *args, **kwargs)
 
 
@@ -30,18 +38,18 @@ def lint(session):
         "flake8-bugbear",
         "flake8-import-order",
     )
-    session.run(trajectory_queue)
+    session.run("flake8", *args)
 
 
 @nox.session(python=["3.10"])
 def mypy(session):
     args = session.posargs or locations
     install_with_constraints(session, "mypy")
-    session.run(trajectory_queue)
+    session.run("mypy", *args)
 
 
 @nox.session(python=["3.10"])
 def tests(session) -> None:
     args = session.posargs
-    session.run(trajectory_queue)
-    session.run(trajectory_queue)
+    session.run("poetry", "install", external=True)
+    session.run("pytest", *args)
