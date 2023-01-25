@@ -1,18 +1,70 @@
 import pytest
 from typing import List
-from unittest.mock import call
 
-from src.preferences import FeedbackCollectionProcess, Segment, SegmentDB, SEGMENT_LENGTH
+from src.preferences import (
+    FeedbackCollectionProcess,
+    Segment,
+    SegmentDB,
+    SEGMENT_LENGTH,
+)
 import src.preferences
+
+THREAD_QUEUE_COUNT = 2
 
 
 @pytest.fixture
-def feedback_collection_process(mocker):
-    def _create_feedback_collection_process(segment_queue=None, segment_db=None):
-        mocker.patch("src.preferences.SegmentDB", return_value=segment_db)
+def feedback_collection_process(mocker, queue_with_items, trajectory_queue_with_items):
+    def _create_feedback_collection_process(
+        segment_db=None,
+        segment_queue=None,
+        preference_queue=None,
+        trajectory_queue=None,
+        reward_modelling_queue=None,
+    ):
+        if segment_db is None:
+            segment_db = mocker.Mock()
+            segment_db.query_segment_pairs = mocker.Mock(return_value=[mocker.Mock()])
+
+        if trajectory_queue is None:
+            trajectory_queue = trajectory_queue_with_items([])
+
+        if segment_queue is None:
+            segment_queue = queue_with_items([])
+
+        if preference_queue is None:
+            preference_queue = queue_with_items([])
+
+        if reward_modelling_queue is None:
+            reward_modelling_queue = queue_with_items([])
+
+        mocker.patch(
+            "src.preferences.SegmentDB",
+            return_value=segment_db,
+        )
         mocker.patch("src.preferences.PreferenceElicitationThread.run")
-        mocker.patch("src.preferences.Queue", return_value=segment_queue)
-        feedback_collection = FeedbackCollectionProcess()
+
+        thread_queue_count = 0
+
+        def create_queue():
+            nonlocal thread_queue_count
+            assert (
+                thread_queue_count < THREAD_QUEUE_COUNT
+            ), f"Should only create {THREAD_QUEUE_COUNT} thread queues."
+            if thread_queue_count == 0:
+                thread_queue_count += 1
+                return segment_queue
+            if thread_queue_count == 1:
+                thread_queue_count += 1
+                return preference_queue
+
+        mocker.patch("src.preferences.ThreadQueue", side_effect=create_queue)
+        mocker.patch(
+            "src.preferences.ProcessQueue", return_value=reward_modelling_queue
+        )
+
+        feedback_collection = FeedbackCollectionProcess(
+            trajectory_queue=trajectory_queue
+        )
 
         return feedback_collection
 
@@ -20,25 +72,34 @@ def feedback_collection_process(mocker):
 
 
 @pytest.fixture
-def trajectory_queue_with_items(mocker):
-    def _create_trajectory_queue(items: List):
-        items = ["END"] + items
-
+def queue_with_items(mocker):
+    def _create_queue(items: List):
         def empty():
             return len(items) == 0
 
         def get():
-            assert len(items) > 0, "Can only call get on Queue if the there are items in the Queue!"
+            assert (
+                len(items) > 0
+            ), "Can only call get on Queue if the there are items in the Queue!"
             item = items.pop()
             return item
 
-        trajectory_queue = mocker.Mock()
-        trajectory_queue.empty = mocker.Mock(side_effect=empty)
-        trajectory_queue.get = mocker.Mock(side_effect=get)
+        queue = mocker.Mock()
+        queue.empty = mocker.Mock(side_effect=empty)
+        queue.get = mocker.Mock(side_effect=get)
+        queue.put = mocker.Mock()
 
-        return trajectory_queue
+        return queue
 
-    return _create_trajectory_queue
+    return _create_queue
+
+
+@pytest.fixture
+def trajectory_queue_with_items(queue_with_items):
+    def _create_queue(items: List):
+        return queue_with_items(["END"] + items)
+
+    return _create_queue
 
 
 def test_segment_stores_data_correctly(mocker):
@@ -115,57 +176,99 @@ def test_segmentdb_query_segment_pairs_returns_n_pairs_of_unique_segments(mocker
 
 
 def test_feedback_collection_process_run_runs_until_receiving_end_message(
-        feedback_collection_process, trajectory_queue_with_items
+    feedback_collection_process, trajectory_queue_with_items
 ):
     trajectory_queue = trajectory_queue_with_items(["A", "B", "C"])
 
-    feedback_collection = feedback_collection_process()
-    feedback_collection.run(trajectory_queue)
+    feedback_collection = feedback_collection_process(trajectory_queue=trajectory_queue)
+    feedback_collection.run()
 
     assert feedback_collection.trajectory_queue.get.call_count == 4
 
 
 def test_feedback_collection_process_run_initializes_segment_db(
-        feedback_collection_process, trajectory_queue_with_items
+    feedback_collection_process,
 ):
-    trajectory_queue = trajectory_queue_with_items([])
-
     feedback_collection = feedback_collection_process()
-    feedback_collection.run(trajectory_queue)
+    feedback_collection.run()
 
     assert src.preferences.SegmentDB.call_count == 1
 
 
 def test_feedback_collection_process_run_starts_preference_elicitation_thread(
-        feedback_collection_process, mocker, trajectory_queue_with_items
+    feedback_collection_process, mocker
 ):
-    segment_queue = mocker.Mock()
-    trajectory_queue = trajectory_queue_with_items([])
+    preference_queue = mocker.Mock()
 
-    feedback_collection = feedback_collection_process(segment_queue=segment_queue)
-    feedback_collection.run(trajectory_queue)
+    feedback_collection = feedback_collection_process(preference_queue=preference_queue)
+    feedback_collection.run()
 
     assert src.preferences.PreferenceElicitationThread.run.call_count == 1
     src.preferences.PreferenceElicitationThread.run.assert_called_with(
-        queue=segment_queue
+        queue=preference_queue
     )
 
 
 def test_feedback_collection_process_stores_segments_from_available_trajectories(
-        feedback_collection_process, mocker, trajectory_queue_with_items
+    feedback_collection_process, mocker, trajectory_queue_with_items
 ):
     segment_db = mocker.Mock()
     segment_db.store_segments = mocker.Mock()
     trajectory = [(mocker.Mock(), mocker.Mock()) for _ in range(SEGMENT_LENGTH * 3)]
     segment1 = trajectory[:SEGMENT_LENGTH]
-    segment2 = trajectory[SEGMENT_LENGTH:SEGMENT_LENGTH * 2]
-    segment3 = trajectory[SEGMENT_LENGTH * 2:]
+    segment2 = trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2]
+    segment3 = trajectory[SEGMENT_LENGTH * 2 :]
     trajectory_queue = trajectory_queue_with_items([trajectory])
 
-    feedback_collection = feedback_collection_process(segment_db=segment_db)
-    feedback_collection.run(trajectory_queue)
+    feedback_collection = feedback_collection_process(
+        segment_db=segment_db, trajectory_queue=trajectory_queue
+    )
+    feedback_collection.run()
 
     assert segment_db.store_segments.call_count == 1
-    segment_db.store_segments.assert_called_with(
-        [segment1, segment2, segment3]
+    segment_db.store_segments.assert_called_with([segment1, segment2, segment3])
+
+
+def test_feedback_collection_process_sends_segments_to_preference_elicitor(
+    feedback_collection_process, mocker, queue_with_items, trajectory_queue_with_items
+):
+    trajectory = [(mocker.Mock(), mocker.Mock()) for _ in range(SEGMENT_LENGTH * 2)]
+    segment1 = trajectory[:SEGMENT_LENGTH]
+    segment2 = trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2]
+
+    segment_db = mocker.Mock()
+    segment_db.query_segment_pairs = mocker.Mock(return_value=[(segment1, segment2)])
+    segment_queue = queue_with_items([])
+
+    trajectory_queue = trajectory_queue_with_items([trajectory])
+
+    feedback_collection = feedback_collection_process(
+        trajectory_queue=trajectory_queue,
+        segment_queue=segment_queue,
+        segment_db=segment_db,
     )
+    feedback_collection.run()
+
+    assert segment_db.query_segment_pairs.call_count == 1
+    assert segment_queue.put.call_count == 1
+    segment_queue.put.assert_called_with((segment1, segment2))
+
+
+def test_feedback_collection_process_sends_preferences_to_reward_modeller(
+    feedback_collection_process, mocker, queue_with_items, trajectory_queue_with_items
+):
+    trajectory = [(mocker.Mock(), mocker.Mock()) for _ in range(SEGMENT_LENGTH * 2)]
+    reward_modelling_queue = queue_with_items([])
+    preference = mocker.Mock()
+    preference_queue = queue_with_items([preference])
+    trajectory_queue = trajectory_queue_with_items([trajectory])
+
+    feedback_collection = feedback_collection_process(
+        preference_queue=preference_queue,
+        trajectory_queue=trajectory_queue,
+        reward_modelling_queue=reward_modelling_queue,
+    )
+    feedback_collection.run()
+
+    assert reward_modelling_queue.put.call_count == 1
+    reward_modelling_queue.put.assert_called_with(preference)
