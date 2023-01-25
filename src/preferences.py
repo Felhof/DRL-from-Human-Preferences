@@ -4,6 +4,8 @@ from threading import Thread
 
 import numpy as np
 
+SEGMENT_LENGTH = 300
+
 
 @dataclass
 class Preference:
@@ -47,21 +49,32 @@ class SegmentDB:
 
 
 class FeedbackCollectionProcess(Process):
-
     def __init__(self):
         super().__init__()
+        self.trajectory_queue = None
         self.segment_db = None
         self.segment_queue = None
         self.preference_elicitation = None
 
-    def run(self):
+    def run(self, trajectory_queue):
+        self.trajectory_queue = trajectory_queue
         self.segment_db = SegmentDB()
         self.segment_queue = Queue()
         self.preference_elicitation = PreferenceElicitationThread()
         self.preference_elicitation.run(queue=self.segment_queue)
 
+        while True:
+            if self.trajectory_queue.empty():
+                continue
+
+            msg = self.trajectory_queue.get()
+            if isinstance(msg, str) and msg == "END":
+                break
+
+            segments = [msg[i:i + SEGMENT_LENGTH] for i in range(0, len(msg), SEGMENT_LENGTH)]
+            self.segment_db.store_segments(segments)
+
 
 class PreferenceElicitationThread(Thread):
-
     def run(self, queue=None):
         pass
