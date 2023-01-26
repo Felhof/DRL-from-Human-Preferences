@@ -321,7 +321,7 @@ def test_feedback_collection_process_can_generate_preference_from_segment_pair(
     received_preference = feedback_collection.get_preference_from_segment_pair(segment_pair)
 
     # Then
-    src.preferences.Thread.assert_called_once_with(target=feedback_collection._ask_for_evaluation, args=(thread_queue,))
+    src.preferences.Thread.assert_called_once_with(target=_ask_for_evaluation, args=(thread_queue,))
 
     cv2.namedWindow.assert_called_once_with("ClipWindow")
     assert cv2.imshow.call_count == 5
@@ -334,12 +334,14 @@ def test_feedback_collection_process_can_generate_preference_from_segment_pair(
     assert expected_preference == received_preference
 
 
-def test_feedback_collection_process_can_ask_for_evaluation(
+def test_can_ask_for_evaluation(
         mocker
 ):
     thread_queue = mocker.Mock()
     thread_queue.put = mocker.Mock()
     mocker.patch("builtins.input", return_value="R")
+
+    src.preferences.ask_for_evaluation(thread_queue)
 
     builtins.input.assert_called_once_with(
         "Please indicate a preference for the left (L) or right (R) clip by typing L or R or indicate indifference by "

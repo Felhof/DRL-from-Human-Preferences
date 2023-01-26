@@ -56,6 +56,16 @@ class SegmentDB:
         return segment_pairs
 
 
+def ask_for_evaluation(p_queue: ThreadQueue):
+    p = ''
+    while p not in ['E', 'I', 'L', 'R']:
+        p = input(
+            "Please indicate a preference for the left (L) or right (R) clip by typing L or R or indicate "
+            "indifference by typing E. If you consider the clips incomparable, type I."
+        )
+    p_queue.put(p)
+
+
 class FeedbackCollectionProcess(Process):
     def __init__(self, trajectory_queue: Queue):
         super().__init__()
@@ -63,9 +73,6 @@ class FeedbackCollectionProcess(Process):
         self.reward_modelling_queue = None
         self.segment_db = None
         self.preference_elicitor = None
-
-    def _ask_for_evaluation(self):
-        pass
 
     def _update_segment_db(self, trajectory):
         segments = [
@@ -82,7 +89,7 @@ class FeedbackCollectionProcess(Process):
 
         p_queue = ThreadQueue()
 
-        evaluation_thread = Thread(target=self._ask_for_evaluation, args=(p_queue,))
+        evaluation_thread = Thread(target=ask_for_evaluation, args=(p_queue,))
         evaluation_thread.start()
 
         cv2.namedWindow("ClipWindow")
