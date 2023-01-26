@@ -39,7 +39,7 @@ class SegmentDB:
 
     def query_segment_pairs(self, n=1):
         assert (
-                len(self.segments) >= 2 * n
+            len(self.segments) >= 2 * n
         ), "Not enough segments to get that many pairs!"
 
         all_indices = list(range(len(self.segments)))
@@ -57,8 +57,8 @@ class SegmentDB:
 
 
 def ask_for_evaluation(p_queue: ThreadQueue):
-    p = ''
-    while p not in ['E', 'I', 'L', 'R']:
+    p = ""
+    while p not in ["E", "I", "L", "R"]:
         p = input(
             "Please indicate a preference for the left (L) or right (R) clip by typing L or R or indicate "
             "indifference by typing E. If you consider the clips incomparable, type I."
@@ -76,7 +76,7 @@ class FeedbackCollectionProcess(Process):
 
     def _update_segment_db(self, trajectory):
         segments = [
-            trajectory[i: i + SEGMENT_LENGTH]
+            trajectory[i : i + SEGMENT_LENGTH]
             for i in range(0, len(trajectory), SEGMENT_LENGTH)
         ]
         self.segment_db.store_segments(segments)
@@ -120,15 +120,9 @@ class FeedbackCollectionProcess(Process):
                 preference = self.get_preference_from_segment_pair(segment_pair)
                 if preference == "I":
                     continue
-                mu = {
-                    "L": 0.,
-                    "R": 1.,
-                    "E": 0.5
-                }[preference]
+                mu = {"L": 0.0, "R": 1.0, "E": 0.5}[preference]
                 self.reward_modelling_queue.put(
                     Preference(
-                        segment1=segment_pair[0],
-                        segment2=segment_pair[1],
-                        mu=mu
+                        segment1=segment_pair[0], segment2=segment_pair[1], mu=mu
                     )
                 )

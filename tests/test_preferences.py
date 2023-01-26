@@ -35,14 +35,14 @@ def db_with_segments(mocker):
 
 @pytest.fixture
 def feedback_collection_process(
-        db_with_segments, mocker, queue_with_items, trajectory_queue_with_items
+    db_with_segments, mocker, queue_with_items, trajectory_queue_with_items
 ):
     def _create_feedback_collection_process(
-            segment_db=db_with_segments(),
-            trajectory_queue=None,
-            reward_modelling_queue=None,
-            mock_preferences=None,
-            evaluation_thread=None
+        segment_db=db_with_segments(),
+        trajectory_queue=None,
+        reward_modelling_queue=None,
+        mock_preferences=None,
+        evaluation_thread=None,
     ):
 
         if trajectory_queue is None:
@@ -67,7 +67,9 @@ def feedback_collection_process(
         )
 
         if mock_preferences is not None:
-            feedback_collection.get_preference_from_segment_pair = mocker.Mock(side_effect=mock_preferences)
+            feedback_collection.get_preference_from_segment_pair = mocker.Mock(
+                side_effect=mock_preferences
+            )
 
         return feedback_collection
 
@@ -82,7 +84,7 @@ def queue_with_items(mocker):
 
         def get():
             assert (
-                    len(items) > 0
+                len(items) > 0
             ), "Can only call get on Queue if the there are items in the Queue!"
             item = items.pop()
             return item
@@ -179,15 +181,13 @@ def test_segmentdb_query_segment_pairs_returns_n_pairs_of_unique_segments(mocker
 
 
 def test_feedback_collection_process_run_runs_until_receiving_end_message(
-        feedback_collection_process, mocker, trajectory_queue_with_items
+    feedback_collection_process, mocker, trajectory_queue_with_items
 ):
     trajectory_queue = trajectory_queue_with_items(["A", "B", "C"])
 
     feedback_collection = feedback_collection_process(
         trajectory_queue=trajectory_queue,
-        mock_preferences=mocker.Mock(
-            return_value="I"
-        ),
+        mock_preferences=mocker.Mock(return_value="I"),
     )
     feedback_collection.run()
 
@@ -195,7 +195,7 @@ def test_feedback_collection_process_run_runs_until_receiving_end_message(
 
 
 def test_feedback_collection_process_run_initializes_segment_db(
-        feedback_collection_process,
+    feedback_collection_process,
 ):
     feedback_collection = feedback_collection_process()
     feedback_collection.run()
@@ -204,21 +204,19 @@ def test_feedback_collection_process_run_initializes_segment_db(
 
 
 def test_feedback_collection_process_stores_segments_from_available_trajectories(
-        db_with_segments, feedback_collection_process, mocker, trajectory_queue_with_items
+    db_with_segments, feedback_collection_process, mocker, trajectory_queue_with_items
 ):
     segment_db = db_with_segments()
     trajectory = [(mocker.Mock(), mocker.Mock()) for _ in range(SEGMENT_LENGTH * 3)]
     segment1 = trajectory[:SEGMENT_LENGTH]
-    segment2 = trajectory[SEGMENT_LENGTH: SEGMENT_LENGTH * 2]
-    segment3 = trajectory[SEGMENT_LENGTH * 2:]
+    segment2 = trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2]
+    segment3 = trajectory[SEGMENT_LENGTH * 2 :]
     trajectory_queue = trajectory_queue_with_items([trajectory])
 
     feedback_collection = feedback_collection_process(
         segment_db=segment_db,
         trajectory_queue=trajectory_queue,
-        mock_preferences=mocker.Mock(
-            return_value="I"
-        )
+        mock_preferences=mocker.Mock(return_value="I"),
     )
     feedback_collection.run()
 
@@ -227,15 +225,15 @@ def test_feedback_collection_process_stores_segments_from_available_trajectories
 
 
 def test_feedback_collection_process_asks_for_preference_from_preference_elicitor(
-        db_with_segments,
-        feedback_collection_process,
-        mocker,
-        queue_with_items,
-        trajectory_queue_with_items,
+    db_with_segments,
+    feedback_collection_process,
+    mocker,
+    queue_with_items,
+    trajectory_queue_with_items,
 ):
     trajectory = [(mocker.Mock(), mocker.Mock()) for _ in range(SEGMENT_LENGTH * 2)]
     segment1 = trajectory[:SEGMENT_LENGTH]
-    segment2 = trajectory[SEGMENT_LENGTH: SEGMENT_LENGTH * 2]
+    segment2 = trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2]
 
     segment_db = db_with_segments(query_return_value=[(segment1, segment2)])
 
@@ -244,31 +242,35 @@ def test_feedback_collection_process_asks_for_preference_from_preference_elicito
     feedback_collection = feedback_collection_process(
         trajectory_queue=trajectory_queue,
         segment_db=segment_db,
-        mock_preferences=mocker.Mock(
-            return_value="I"
-        )
+        mock_preferences=mocker.Mock(return_value="I"),
     )
     feedback_collection.run()
 
     assert segment_db.query_segment_pairs.call_count == 1
     assert feedback_collection.get_preference_from_segment_pair.call_count == 1
-    feedback_collection.get_preference_from_segment_pair.assert_called_with((segment1, segment2))
+    feedback_collection.get_preference_from_segment_pair.assert_called_with(
+        (segment1, segment2)
+    )
 
 
+@pytest.mark.parametrize(
+    "preference, expected_mu", [("L", 0.0), ("R", 1.0), ("E", 0.5)]
+)
 def test_feedback_collection_process_sends_preferences_to_reward_modeller(
-        db_with_segments,
-        feedback_collection_process,
-        mocker,
-        queue_with_items,
-        trajectory_queue_with_items,
+    preference,
+    expected_mu,
+    db_with_segments,
+    feedback_collection_process,
+    mocker,
+    queue_with_items,
+    trajectory_queue_with_items,
 ):
     trajectory = [(mocker.Mock(), mocker.Mock()) for _ in range(SEGMENT_LENGTH * 2)]
     segment1 = Segment(trajectory[:SEGMENT_LENGTH])
-    segment2 = Segment(trajectory[SEGMENT_LENGTH: SEGMENT_LENGTH * 2])
+    segment2 = Segment(trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2])
 
     reward_modelling_queue = queue_with_items([])
     segment_db = db_with_segments(query_return_value=[(segment1, segment2)])
-    preference = "L"
 
     def return_preference_for_segment_pair(segment_pair):
         if segment_pair == (segment1, segment2):
@@ -281,7 +283,7 @@ def test_feedback_collection_process_sends_preferences_to_reward_modeller(
         trajectory_queue=trajectory_queue,
         reward_modelling_queue=reward_modelling_queue,
         segment_db=segment_db,
-        mock_preferences=return_preference_for_segment_pair
+        mock_preferences=return_preference_for_segment_pair,
     )
     feedback_collection.run()
 
@@ -290,13 +292,45 @@ def test_feedback_collection_process_sends_preferences_to_reward_modeller(
         Preference(
             segment1=segment1,
             segment2=segment2,
-            mu=0.,
+            mu=expected_mu,
         ),
     )
 
 
+def test_feedback_collection_process_does_not_send_preference_for_incomparable_segments(
+    db_with_segments,
+    feedback_collection_process,
+    mocker,
+    queue_with_items,
+    trajectory_queue_with_items,
+):
+    trajectory = [(mocker.Mock(), mocker.Mock()) for _ in range(SEGMENT_LENGTH * 2)]
+    segment1 = Segment(trajectory[:SEGMENT_LENGTH])
+    segment2 = Segment(trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2])
+
+    reward_modelling_queue = queue_with_items([])
+    segment_db = db_with_segments(query_return_value=[(segment1, segment2)])
+
+    def return_preference_for_segment_pair(segment_pair):
+        if segment_pair == (segment1, segment2):
+            return "I"
+        return mocker.Mock()
+
+    trajectory_queue = trajectory_queue_with_items([trajectory])
+
+    feedback_collection = feedback_collection_process(
+        trajectory_queue=trajectory_queue,
+        reward_modelling_queue=reward_modelling_queue,
+        segment_db=segment_db,
+        mock_preferences=return_preference_for_segment_pair,
+    )
+    feedback_collection.run()
+
+    assert reward_modelling_queue.put.call_count == 0
+
+
 def test_feedback_collection_process_can_generate_preference_from_segment_pair(
-        feedback_collection_process, mocker
+    feedback_collection_process, mocker
 ):
     # Given
     segment1 = Segment([(mocker.Mock(), mocker.Mock()) for _ in range(5)])
@@ -318,10 +352,14 @@ def test_feedback_collection_process_can_generate_preference_from_segment_pair(
     mocker.patch("src.preferences.ThreadQueue", return_value=thread_queue)
 
     # When
-    received_preference = feedback_collection.get_preference_from_segment_pair(segment_pair)
+    received_preference = feedback_collection.get_preference_from_segment_pair(
+        segment_pair
+    )
 
     # Then
-    src.preferences.Thread.assert_called_once_with(target=_ask_for_evaluation, args=(thread_queue,))
+    src.preferences.Thread.assert_called_once_with(
+        target=src.preferences.ask_for_evaluation, args=(thread_queue,)
+    )
 
     cv2.namedWindow.assert_called_once_with("ClipWindow")
     assert cv2.imshow.call_count == 5
@@ -334,9 +372,7 @@ def test_feedback_collection_process_can_generate_preference_from_segment_pair(
     assert expected_preference == received_preference
 
 
-def test_can_ask_for_evaluation(
-        mocker
-):
+def test_can_ask_for_evaluation(mocker):
     thread_queue = mocker.Mock()
     thread_queue.put = mocker.Mock()
     mocker.patch("builtins.input", return_value="R")
