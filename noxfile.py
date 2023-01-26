@@ -14,17 +14,25 @@ def black(session):
 
 
 def install_with_constraints(session, *args, **kwargs):
-    with tempfile.NamedTemporaryFile() as requirements:
+    with tempfile.NamedTemporaryFile() as tmp:
         session.run(
             "poetry",
             "export",
             "--dev",
             "--format=requirements.txt",
             "--without-hashes",
-            f"--output={requirements.name}",
+            f"--output={tmp.name}",
             external=True,
         )
-        session.install(f"--constraint={requirements.name}", *args, **kwargs)
+        # remove lines with extra constrains e.g. gymnasium[accept-rom-license]
+        # as they cause a pip error
+        requirements = tmp.readlines()
+        tmp.seek(0)
+        for line in requirements:
+            if "[" not in str(line):
+                tmp.write(line)
+        tmp.truncate()
+        session.install(f"--constraint={tmp.name}", *args, **kwargs)
 
 
 # flake8-black causes a warning if black would make changes
