@@ -35,7 +35,7 @@ class SegmentDB:
 
     def query_segment_pairs(self, n=1):
         assert (
-            len(self.segments) >= 2 * n
+                len(self.segments) >= 2 * n
         ), "Not enough segments to get that many pairs!"
 
         all_indices = list(range(len(self.segments)))
@@ -62,15 +62,17 @@ class FeedbackCollectionProcess(Process):
 
     def _update_segment_db(self, trajectory):
         segments = [
-            trajectory[i : i + SEGMENT_LENGTH]
+            trajectory[i: i + SEGMENT_LENGTH]
             for i in range(0, len(trajectory), SEGMENT_LENGTH)
         ]
         self.segment_db.store_segments(segments)
 
+    def ask_for_preference(self, segment_pair):
+        pass
+
     def run(self):
         self.segment_db = SegmentDB()
         self.reward_modelling_queue = Queue()
-        self.preference_elicitor = PreferenceElicitor()
 
         while True:
             if not self.trajectory_queue.empty():
@@ -81,16 +83,6 @@ class FeedbackCollectionProcess(Process):
 
             if len(self.segment_db) > 0:
                 segment_pair = self.segment_db.query_segment_pairs()[0]
-                preference = self.preference_elicitor.ask_for_preference(segment_pair)
+                preference = self.ask_for_preference(segment_pair)
                 self.reward_modelling_queue.put(preference)
 
-
-class PreferenceElicitor:
-    def __init__(self):
-        pass
-
-    def run(self, queue=None):
-        pass
-
-    def ask_for_preference(self, segment_pair):
-        pass
