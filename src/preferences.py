@@ -2,10 +2,11 @@ from dataclasses import dataclass
 from multiprocessing import Process, Queue
 from queue import Queue as ThreadQueue
 from threading import Thread
-from typing import Tuple
+from typing import List, Tuple
 
 import cv2
 import numpy as np
+from src.utils import Trajectory
 
 SEGMENT_LENGTH = 300
 CLIP_BORDER_HEIGHT = 84
@@ -20,24 +21,26 @@ class Preference:
 
 
 class Segment:
-    def __init__(self, data) -> None:
+    def __init__(self: "Segment", data: Trajectory) -> None:
         self.data = data
 
-    def get_observations(self):
+    def get_observations(self: "Segment") -> List[np.ndarray]:
         return [p[0] for p in self.data]
 
 
 class SegmentDB:
-    def __init__(self) -> None:
-        self.segments = []
+    def __init__(self: "SegmentDB") -> None:
+        self.segments: List[Segment] = []
 
-    def __len__(self) -> int:
+    def __len__(self: "SegmentDB") -> int:
         return len(self.segments)
 
-    def store_segments(self, new_segments):
+    def store_segments(self: "SegmentDB", new_segments: List[Segment]) -> None:
         self.segments.extend(new_segments)
 
-    def query_segment_pairs(self, n=1):
+    def query_segment_pairs(
+        self: "SegmentDB", n: int = 1
+    ) -> List[Tuple[Segment, Segment]]:
         assert (
             len(self.segments) >= 2 * n
         ), "Not enough segments to get that many pairs!"
@@ -56,7 +59,7 @@ class SegmentDB:
         return segment_pairs
 
 
-def ask_for_evaluation(p_queue: ThreadQueue):
+def ask_for_evaluation(p_queue: ThreadQueue) -> None:
     p = ""
     while p not in ["E", "I", "L", "R"]:
         p = input(
@@ -67,21 +70,25 @@ def ask_for_evaluation(p_queue: ThreadQueue):
 
 
 class FeedbackCollectionProcess(Process):
-    def __init__(self, trajectory_queue: Queue):
+    def __init__(self: "FeedbackCollectionProcess", trajectory_queue: Queue) -> None:
         super().__init__()
         self.trajectory_queue: Queue = trajectory_queue
         self.reward_modelling_queue = None
         self.segment_db = None
         self.preference_elicitor = None
 
-    def _update_segment_db(self, trajectory):
-        segments = [
-            trajectory[i : i + SEGMENT_LENGTH]
+    def _update_segment_db(
+        self: "FeedbackCollectionProcess", trajectory: Trajectory
+    ) -> None:
+        segments: List[Segment] = [
+            Segment(trajectory[i : i + SEGMENT_LENGTH])
             for i in range(0, len(trajectory), SEGMENT_LENGTH)
         ]
         self.segment_db.store_segments(segments)
 
-    def get_preference_from_segment_pair(self, segment_pair: Tuple[Segment, Segment]):
+    def get_preference_from_segment_pair(
+        self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
+    ) -> str:
         border = np.zeros((CLIP_BORDER_HEIGHT, CLIP_BORDER_WIDTH), dtype=np.uint8)
 
         clip1 = segment_pair[0].get_observations()
@@ -104,7 +111,7 @@ class FeedbackCollectionProcess(Process):
 
         return preference
 
-    def run(self):
+    def run(self: "FeedbackCollectionProcess"):
         self.segment_db = SegmentDB()
         self.reward_modelling_queue = Queue()
 
