@@ -2,10 +2,14 @@ from dataclasses import dataclass
 from multiprocessing import Process, Queue
 from queue import Queue as ThreadQueue
 from threading import Thread
+from typing import Tuple
 
+import cv2
 import numpy as np
 
 SEGMENT_LENGTH = 300
+CLIP_BORDER_HEIGHT = 84
+CLIP_BORDER_WIDTH = 10
 
 
 @dataclass
@@ -60,6 +64,9 @@ class FeedbackCollectionProcess(Process):
         self.segment_db = None
         self.preference_elicitor = None
 
+    def _ask_for_evaluation(self):
+        pass
+
     def _update_segment_db(self, trajectory):
         segments = [
             trajectory[i: i + SEGMENT_LENGTH]
@@ -67,8 +74,28 @@ class FeedbackCollectionProcess(Process):
         ]
         self.segment_db.store_segments(segments)
 
-    def ask_for_preference(self, segment_pair):
-        pass
+    def get_preference_from_segment_pair(self, segment_pair: Tuple[Segment, Segment]):
+        border = np.zeros((CLIP_BORDER_HEIGHT, CLIP_BORDER_WIDTH), dtype=np.uint8)
+
+        clip1 = segment_pair[0].get_observations()
+        clip2 = segment_pair[1].get_observations()
+
+        p_queue = ThreadQueue()
+
+        evaluation_thread = Thread(target=self._ask_for_evaluation, args=(p_queue,))
+        evaluation_thread.start()
+
+        cv2.namedWindow("ClipWindow")
+        while evaluation_thread.is_alive():
+            for clip1_frame, clip2_frame in zip(clip1, clip2):
+                frame = np.hstack((clip1_frame, border, clip2_frame))
+                cv2.imshow("ClipWindow", frame)
+                cv2.waitKey(25)
+        cv2.destroyWindow("ClipWindow")
+
+        preference = p_queue.get()
+
+        return preference
 
     def run(self):
         self.segment_db = SegmentDB()
@@ -83,6 +110,18 @@ class FeedbackCollectionProcess(Process):
 
             if len(self.segment_db) > 0:
                 segment_pair = self.segment_db.query_segment_pairs()[0]
-                preference = self.ask_for_preference(segment_pair)
-                self.reward_modelling_queue.put(preference)
-
+                preference = self.get_preference_from_segment_pair(segment_pair)
+                if preference == "I":
+                    continue
+                mu = {
+                    "L": 0.,
+                    "R": 1.,
+                    "E": 0.5
+                }[preference]
+                self.reward_modelling_queue.put(
+                    Preference(
+                        segment1=segment_pair[0],
+                        segment2=segment_pair[1],
+                        mu=mu
+                    )
+                )
