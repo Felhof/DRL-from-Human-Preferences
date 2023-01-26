@@ -1,6 +1,7 @@
 import numpy as np
+import torch
 
-from src.rewardmodelling import PreferenceBuffer
+from src.rewardmodelling import PreferenceBuffer, RewardModel
 
 
 def test_preference_buffer_can_add_new_items_up_to_buffer_size_and_loops_afterwards(mocker):
@@ -52,3 +53,17 @@ def test_preference_buffer_can_get_minibatch_of_distinct_entries(mocker):
 
     # Then
     assert minibatch == [p2, p5, p3]
+
+
+def test_reward_model_maps_observation_to_scalar():
+    reward_model = RewardModel()
+
+    single_frame = torch.rand((4, 84, 84))
+    prediction = reward_model.forward(single_frame)
+
+    assert prediction.shape == torch.Size([1])
+
+    minibatch = torch.rand((32, 4, 84, 84))
+
+    predictions = reward_model.forward(minibatch)
+    assert predictions.shape
