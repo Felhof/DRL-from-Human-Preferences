@@ -2,13 +2,10 @@ from multiprocessing import Process, Queue
 import multiprocessing
 
 import gymnasium as gym
+from src.preferences import FeedbackCollectionProcess
 
 
-def start_collecting_feedback(trajectory_queue: Queue):
-    pass
-
-
-def start_reward_modelling(reward_model_queue: Queue):
+def start_reward_modelling(reward_model_queue: Queue) -> None:
     pass
 
 
@@ -22,9 +19,7 @@ class RLHFWrapper:
         self.current_trajectory = []
 
     def start_rlhf(self: "RLHFWrapper") -> None:
-        feedback_collecting_process = multiprocessing.Process(
-            target=start_collecting_feedback, args=(self.trajectory_queue,)
-        )
+        feedback_collecting_process = FeedbackCollectionProcess(self.trajectory_queue)
         reward_modelling_process = multiprocessing.Process(
             target=start_reward_modelling, args=(self.reward_model_queue,)
         )
