@@ -12,21 +12,22 @@ MIN_COMPARISONS_FOR_TRAINING = 500
 
 
 class PreferenceBuffer:
-    def __init__(self: "PreferenceBuffer") -> None:
+    def __init__(self: "PreferenceBuffer", buffer_size=3000) -> None:
         self.preferences: List[Preference] = []
         self.number_of_preferences = 0
         self.idx = 0
+        self.buffer_size = buffer_size
 
     def __len__(self: "PreferenceBuffer") -> int:
         return self.number_of_preferences
 
     def add(self, preference: Preference) -> None:
-        if self.number_of_preferences < BUFFER_SIZE:
+        if self.number_of_preferences < self.buffer_size:
             self.preferences.append(preference)
             self.number_of_preferences += 1
         else:
             self.preferences[self.idx] = preference
-        self.idx = (self.idx + 1) % BUFFER_SIZE
+        self.idx = (self.idx + 1) % self.buffer_size
 
     def get_minibatch(self, n=32) -> List[Preference]:
         indices = list(range(0, self.number_of_preferences))
@@ -72,17 +73,19 @@ class RewardModel(torch.nn.Module):
 
 class RewardModellingProcess(Process):
     def __init__(
-            self: "RewardModellingProcess",
-            preference_queue: Queue,
-            reward_model_queue: Queue,
-            stop_queue: Queue,
+        self: "RewardModellingProcess",
+        preference_queue: Queue,
+        reward_model_queue: Queue,
+        stop_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
         self.reward_model = RewardModel()
         self.reward_model_queue = reward_model_queue
-        self.training_buffer = PreferenceBuffer()
-        self.evaluation_buffer = PreferenceBuffer()
+        self.training_buffer = PreferenceBuffer(buffer_size=BUFFER_SIZE)
+        self.evaluation_buffer = PreferenceBuffer(
+            buffer_size=int(BUFFER_SIZE * EVALUATION_FREQ)
+        )
         self.stop_queue = stop_queue
 
         self.reward_model_queue.put(self.reward_model)
@@ -101,7 +104,10 @@ class RewardModellingProcess(Process):
                 else:
                     self.evaluation_buffer.add(preference)
 
-            if len(self.training_buffer) + len(self.evaluation_buffer) < MIN_COMPARISONS_FOR_TRAINING:
+            if (
+                len(self.training_buffer) + len(self.evaluation_buffer)
+                < MIN_COMPARISONS_FOR_TRAINING
+            ):
                 continue
 
             self.update_reward_model()
