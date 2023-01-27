@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 
 BUFFER_SIZE = 3000
+EVALUATION_FREQ = 0.2
 
 
 class PreferenceBuffer:
@@ -34,7 +35,6 @@ class PreferenceBuffer:
 
 
 class RewardModel(torch.nn.Module):
-
     def __init__(self: "RewardModel") -> None:
         super().__init__()
         net = nn.Sequential()
@@ -69,12 +69,32 @@ class RewardModel(torch.nn.Module):
 
 
 class RewardModellingProcess(Process):
-
-    def __init__(self: "RewardModellingProcess", reward_model_queue: Queue) -> None:
+    def __init__(
+            self: "RewardModellingProcess",
+            preference_queue: Queue,
+            reward_model_queue: Queue,
+            stop_queue: Queue,
+    ) -> None:
         super().__init__()
+        self.preference_queue = preference_queue
         self.reward_model = RewardModel()
         self.reward_model_queue = reward_model_queue
         self.training_buffer = PreferenceBuffer()
         self.evaluation_buffer = PreferenceBuffer()
+        self.stop_queue = stop_queue
 
         self.reward_model_queue.put(self.reward_model)
+
+    def run(self: "RewardModellingProcess") -> None:
+        while True:
+            if not self.stop_queue.empty():
+                if self.stop_queue.get():
+                    break
+
+            while not self.preference_queue.empty():
+                preference = self.preference_queue.get()
+                use_for_training = np.random.binomial(1, p=1 - EVALUATION_FREQ)
+                if use_for_training:
+                    self.training_buffer.add(preference)
+                else:
+                    self.evaluation_buffer.add(preference)
