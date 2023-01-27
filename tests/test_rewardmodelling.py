@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-from src.rewardmodelling import PreferenceBuffer, RewardModel
+from src.rewardmodelling import PreferenceBuffer, RewardModel, RewardModellingProcess
 
 
 def test_preference_buffer_can_add_new_items_up_to_buffer_size_and_loops_afterwards(mocker):
@@ -67,3 +67,19 @@ def test_reward_model_maps_observation_to_scalar():
 
     predictions = reward_model.forward(minibatch)
     assert predictions.shape
+
+
+def test_reward_modelling_process_puts_initial_reward_model_in_queue(mocker):
+    # Given
+    reward_model = mocker.Mock()
+    mocker.patch("src.rewardmodelling.RewardModel", return_value=reward_model)
+    reward_model_queue = mocker.Mock()
+    reward_model_queue.put = mocker.Mock()
+
+    # When
+    reward_modelling_process = RewardModellingProcess(reward_model_queue)
+
+    # Then
+    assert reward_modelling_process.reward_model == reward_model
+    assert reward_modelling_process.reward_model_queue == reward_model_queue
+    reward_modelling_process.reward_model_queue.put.assert_called_once_with(reward_model)

@@ -1,10 +1,10 @@
+from multiprocessing import Process
 from typing import List
 
 import numpy as np
+from src.preferences import Preference, Queue
 import torch
 import torch.nn as nn
-
-from src.preferences import Preference
 
 BUFFER_SIZE = 3000
 
@@ -66,3 +66,15 @@ class RewardModel(torch.nn.Module):
             output = self.net(x)
             return output.squeeze(0)
         return self.net(x)
+
+
+class RewardModellingProcess(Process):
+
+    def __init__(self: "RewardModellingProcess", reward_model_queue: Queue) -> None:
+        super().__init__()
+        self.reward_model = RewardModel()
+        self.reward_model_queue = reward_model_queue
+        self.training_buffer = PreferenceBuffer()
+        self.evaluation_buffer = PreferenceBuffer()
+
+        self.reward_model_queue.put(self.reward_model)
