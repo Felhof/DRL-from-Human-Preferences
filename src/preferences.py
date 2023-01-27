@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import itertools
 from multiprocessing import Process, Queue
 from queue import Queue as ThreadQueue
 from threading import Thread
@@ -31,6 +32,7 @@ class Segment:
 class SegmentDB:
     def __init__(self: "SegmentDB") -> None:
         self.segments: List[Segment] = []
+        self.queried_pairs = []
 
     def __len__(self: "SegmentDB") -> int:
         return len(self.segments)
@@ -38,25 +40,25 @@ class SegmentDB:
     def store_segments(self: "SegmentDB", new_segments: List[Segment]) -> None:
         self.segments.extend(new_segments)
 
-    def query_segment_pairs(
-        self: "SegmentDB", n: int = 1
-    ) -> List[Tuple[Segment, Segment]]:
-        assert (
-            len(self.segments) >= 2 * n
-        ), "Not enough segments to get that many pairs!"
+    def query_segment_pair(self: "SegmentDB", n: int = 1) -> Tuple[Segment, Segment]:
 
         all_indices = list(range(len(self.segments)))
-        selected_indices = np.random.choice(all_indices, 2 * n, replace=False)
-        np.random.shuffle(selected_indices)
-        index_pairs = [
-            (selected_indices[i], selected_indices[i + 1])
-            for i in range(0, len(selected_indices), 2)
-        ]
-        segment_pairs = [
-            (self.segments[index_pair[0]], self.segments[index_pair[1]])
-            for index_pair in index_pairs
-        ]
-        return segment_pairs
+        possible_pair_indices = list(itertools.combinations(all_indices, 2))
+
+        assert len(possible_pair_indices) > len(
+            self.queried_pairs
+        ), "Not enough segments left to query."
+
+        np.random.shuffle(possible_pair_indices)
+
+        for possible_pair_index in possible_pair_indices:
+            if possible_pair_index in self.queried_pairs:
+                continue
+            self.queried_pairs.append(possible_pair_index)
+            return (
+                self.segments[possible_pair_index[0]],
+                self.segments[possible_pair_index[1]],
+            )
 
 
 def ask_for_evaluation(p_queue: ThreadQueue) -> None:
@@ -129,7 +131,7 @@ class FeedbackCollectionProcess(Process):
                 self._update_segment_db(trajectory)
 
             if len(self.segment_db) > 0:
-                segment_pair = self.segment_db.query_segment_pairs()[0]
+                segment_pair = self.segment_db.query_segment_pair()
                 preference = self.get_preference_from_segment_pair(segment_pair)
                 if preference == "I":
                     continue

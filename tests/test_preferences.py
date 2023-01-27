@@ -25,7 +25,7 @@ def db_with_segments(mocker):
 
         segment_db = mocker.Mock()
         segment_db.store_segments = mocker.Mock()
-        segment_db.query_segment_pairs = mocker.Mock(return_value=query_return_value)
+        segment_db.query_segment_pair = mocker.Mock(return_value=query_return_value)
         segment_db.__len__ = mocker.Mock(return_value=length)
 
         return segment_db
@@ -175,14 +175,19 @@ def test_segmentdb_query_segment_pairs_returns_n_pairs_of_unique_segments(mocker
 
     segment_db.store_segments([segment1, segment2, segment3, segment4])
 
-    segment_pair1, segment_pair2 = segment_db.query_segment_pairs(2)
+    mocker.patch(
+        "src.preferences.itertools.combinations", return_value=[(0, 2), (1, 3)]
+    )
 
-    assert segment_pair1[0] not in segment_pair2
-    assert segment_pair1[1] not in segment_pair2
-    assert segment1 in segment_pair1 or segment_pair2
-    assert segment2 in segment_pair1 or segment_pair2
-    assert segment3 in segment_pair1 or segment_pair2
-    assert segment4 in segment_pair1 or segment_pair2
+    segment_pair1 = segment_db.query_segment_pair()
+    segment_pair2 = segment_db.query_segment_pair()
+
+    assert segment_pair1 != segment_pair2
+    assert segment_pair1 == (segment1, segment3) or (segment2, segment4)
+    assert segment_pair2 == (segment1, segment3) or (segment2, segment4)
+    assert all(
+        [queried_pair in [(1, 3), (0, 2)] for queried_pair in segment_db.queried_pairs]
+    )
 
 
 def test_feedback_collection_process_run_runs_until_receiving_end_message(
@@ -252,7 +257,7 @@ def test_feedback_collection_process_asks_for_preference_from_preference_elicito
     segment1 = trajectory[:SEGMENT_LENGTH]
     segment2 = trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2]
 
-    segment_db = db_with_segments(query_return_value=[(segment1, segment2)])
+    segment_db = db_with_segments(query_return_value=(segment1, segment2))
 
     trajectory_queue = queue_with_items([trajectory])
     stop_queue = stop_queue_with_items([False])
@@ -265,7 +270,7 @@ def test_feedback_collection_process_asks_for_preference_from_preference_elicito
     )
     feedback_collection.run()
 
-    assert segment_db.query_segment_pairs.call_count == 1
+    assert segment_db.query_segment_pair.call_count == 1
     assert feedback_collection.get_preference_from_segment_pair.call_count == 1
     feedback_collection.get_preference_from_segment_pair.assert_called_with(
         (segment1, segment2)
@@ -289,7 +294,7 @@ def test_feedback_collection_process_sends_preferences_to_reward_modeller(
     segment2 = Segment(trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2])
 
     preference_queue = queue_with_items([])
-    segment_db = db_with_segments(query_return_value=[(segment1, segment2)])
+    segment_db = db_with_segments(query_return_value=(segment1, segment2))
 
     def return_preference_for_segment_pair(segment_pair):
         if segment_pair == (segment1, segment2):
@@ -330,7 +335,7 @@ def test_feedback_collection_process_does_not_send_preference_for_incomparable_s
     segment2 = Segment(trajectory[SEGMENT_LENGTH : SEGMENT_LENGTH * 2])
 
     preference_queue = queue_with_items([])
-    segment_db = db_with_segments(query_return_value=[(segment1, segment2)])
+    segment_db = db_with_segments(query_return_value=(segment1, segment2))
 
     def return_preference_for_segment_pair(segment_pair):
         if segment_pair == (segment1, segment2):
