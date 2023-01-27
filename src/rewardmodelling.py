@@ -8,6 +8,7 @@ import torch.nn as nn
 
 BUFFER_SIZE = 3000
 EVALUATION_FREQ = 0.2
+MIN_COMPARISONS_FOR_TRAINING = 500
 
 
 class PreferenceBuffer:
@@ -59,6 +60,7 @@ class RewardModel(torch.nn.Module):
         net.append(nn.LeakyReLU())
         net.append(nn.Linear(in_features=64, out_features=1))
         self.net = net
+        self.has_completed_pretraining = False
 
     def forward(self: "RewardModel", x: torch.Tensor) -> torch.Tensor:
         if len(x.shape) == 3:
@@ -98,3 +100,19 @@ class RewardModellingProcess(Process):
                     self.training_buffer.add(preference)
                 else:
                     self.evaluation_buffer.add(preference)
+
+            if len(self.training_buffer) + len(self.evaluation_buffer) < MIN_COMPARISONS_FOR_TRAINING:
+                continue
+
+            self.train_reward_model()
+
+    def train_reward_model(self: "RewardModellingProcess") -> None:
+        epochs = 1 if self.reward_model.has_completed_pretraining else 200
+
+        for _ in range(epochs):
+            self.train_reward_model_for_one_epoch()
+
+        self.reward_model.has_completed_pretraining = True
+
+    def train_reward_model_for_one_epoch(self):
+        pass

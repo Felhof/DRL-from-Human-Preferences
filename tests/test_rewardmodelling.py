@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 import torch
 
+import src.rewardmodelling
 from src.rewardmodelling import PreferenceBuffer, RewardModel, RewardModellingProcess
 
 
@@ -52,6 +53,11 @@ def runnable_reward_modelling_process(mocker, reward_modelling_process):
         if use_for_training is None:
             use_for_training = [1]
         mocker.patch("src.rewardmodelling.np.random.binomial", side_effect=use_for_training)
+
+        if "preference_queue" not in kwargs:
+            preference_queue = mocker.Mock()
+            preference_queue.empty = mocker.Mock(return_value=True)
+            kwargs["preference_queue"] = preference_queue
 
         if "stop_queue" not in kwargs:
             stop_queue = mocker.Mock()
@@ -186,3 +192,45 @@ def test_reward_modelling_process_run_gets_all_preferences_from_queue(mocker, ru
     assert preferences_added_to_training_buffer[3] == preference5
     assert evaluation_buffer.add.call_count == 1
     assert evaluation_buffer.add.call_args.args[0] == preference4
+
+
+def test_reward_modelling_process_run_does_not_train_when_not_enough_comparisons_are_available(
+        mocker, runnable_reward_modelling_process):
+    training_buffer = mocker.Mock()
+    training_buffer.__len__ = mocker.Mock(return_value=399)
+    evaluation_buffer = mocker.Mock()
+    evaluation_buffer.__len__ = mocker.Mock(return_value=100)
+
+    reward_modelling_process = runnable_reward_modelling_process(
+        training_buffer=training_buffer,
+        evaluation_buffer=evaluation_buffer
+    )
+    reward_modelling_process.train_reward_model_for_one_epoch = mocker.Mock()
+
+    reward_modelling_process.run()
+
+    assert reward_modelling_process.train_reward_model_for_one_epoch.call_count == 0
+
+
+@pytest.mark.parametrize(
+    "has_completed_pretraining, trained_for_epochs", [(False, 200), (True, 1)]
+)
+def test_reward_modelling_process_run_trains_reward_model_when_enough_preferences_are_available(
+        has_completed_pretraining, trained_for_epochs, mocker, runnable_reward_modelling_process):
+    training_buffer = mocker.Mock()
+    training_buffer.__len__ = mocker.Mock(return_value=400)
+    evaluation_buffer = mocker.Mock()
+    evaluation_buffer.__len__ = mocker.Mock(return_value=100)
+    reward_model = mocker.Mock()
+    reward_model.has_completed_pretraining = has_completed_pretraining
+
+    reward_modelling_process = runnable_reward_modelling_process(
+        reward_model=reward_model,
+        training_buffer=training_buffer,
+        evaluation_buffer=evaluation_buffer
+    )
+    reward_modelling_process.train_reward_model_for_one_epoch = mocker.Mock()
+
+    reward_modelling_process.run()
+
+    assert reward_modelling_process.train_reward_model_for_one_epoch.call_count == trained_for_epochs
