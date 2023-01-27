@@ -9,12 +9,12 @@ from src.rewardmodelling import PreferenceBuffer, RewardModel, RewardModellingPr
 @pytest.fixture
 def reward_modelling_process(mocker):
     def _create_reward_modelling_process(
-        preference_queue=None,
-        reward_model=None,
-        reward_model_queue=None,
-        stop_queue=None,
-        training_buffer=None,
-        evaluation_buffer=None,
+            preference_queue=None,
+            reward_model=None,
+            reward_model_queue=None,
+            stop_queue=None,
+            training_buffer=None,
+            evaluation_buffer=None,
     ):
         if preference_queue is None:
             preference_queue = mocker.Mock()
@@ -83,7 +83,7 @@ def runnable_reward_modelling_process(mocker, reward_modelling_process):
 
 
 def test_preference_buffer_can_add_new_items_up_to_buffer_size_and_loops_afterwards(
-    mocker,
+        mocker,
 ):
     # Given
     p1 = mocker.Mock()
@@ -113,27 +113,28 @@ def test_preference_buffer_can_add_new_items_up_to_buffer_size_and_loops_afterwa
     assert preference_buffer.preferences[2] == p3
 
 
-def test_preference_buffer_can_get_minibatch_of_distinct_entries(mocker):
+def test_preference_buffer_can_get_minibatches(mocker):
     # Given
     p1 = mocker.Mock()
     p2 = mocker.Mock()
     p3 = mocker.Mock()
     p4 = mocker.Mock()
     p5 = mocker.Mock()
+    p6 = mocker.Mock()
     mocker.patch(
-        "src.rewardmodelling.np.random.choice", return_value=np.array([1, 4, 2])
+        "src.rewardmodelling.np.random.permutation", side_effect=[np.array([1, 4, 2, 5, 0, 3])]
     )
 
     # When
     preference_buffer = PreferenceBuffer()
 
-    for p in [p1, p2, p3, p4, p5]:
+    for p in [p1, p2, p3, p4, p5, p6]:
         preference_buffer.add(p)
 
-    minibatch = preference_buffer.get_minibatch(n=3)
+    minibatches = [minibatch for minibatch in preference_buffer.get_minibatches(n=3)]
 
     # Then
-    assert minibatch == [p2, p5, p3]
+    assert minibatches == [[p2, p5, p3], [p6, p1, p4]]
 
 
 def test_reward_model_maps_observation_to_scalar():
@@ -151,7 +152,7 @@ def test_reward_model_maps_observation_to_scalar():
 
 
 def test_reward_modelling_process_puts_initial_reward_model_in_queue(
-    mocker, reward_modelling_process
+        mocker, reward_modelling_process
 ):
     # Given
     reward_model = mocker.Mock()
@@ -170,7 +171,7 @@ def test_reward_modelling_process_puts_initial_reward_model_in_queue(
 
 
 def test_reward_modelling_process_run_gets_all_preferences_from_queue(
-    mocker, runnable_reward_modelling_process
+        mocker, runnable_reward_modelling_process
 ):
     # Given
     preference_queue = mocker.Mock()
@@ -217,7 +218,7 @@ def test_reward_modelling_process_run_gets_all_preferences_from_queue(
 
 
 def test_reward_modelling_process_run_does_not_train_when_not_enough_comparisons_are_available(
-    mocker, runnable_reward_modelling_process
+        mocker, runnable_reward_modelling_process
 ):
     training_buffer = mocker.Mock()
     training_buffer.__len__ = mocker.Mock(return_value=399)
@@ -238,10 +239,10 @@ def test_reward_modelling_process_run_does_not_train_when_not_enough_comparisons
     "has_completed_pretraining, trained_for_epochs", [(False, 200), (True, 1)]
 )
 def test_reward_modelling_process_run_trains_reward_model_when_enough_preferences_are_available(
-    has_completed_pretraining,
-    trained_for_epochs,
-    mocker,
-    runnable_reward_modelling_process,
+        has_completed_pretraining,
+        trained_for_epochs,
+        mocker,
+        runnable_reward_modelling_process,
 ):
     training_buffer = mocker.Mock()
     training_buffer.__len__ = mocker.Mock(return_value=400)
@@ -263,7 +264,7 @@ def test_reward_modelling_process_run_trains_reward_model_when_enough_preference
     reward_modelling_process.run()
 
     assert (
-        reward_modelling_process.train_reward_model_for_one_epoch.call_count
-        == trained_for_epochs
+            reward_modelling_process.train_reward_model_for_one_epoch.call_count
+            == trained_for_epochs
     )
     reward_model_queue.put.assert_called_with(reward_model)

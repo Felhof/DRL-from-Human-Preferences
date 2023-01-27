@@ -29,11 +29,16 @@ class PreferenceBuffer:
             self.preferences[self.idx] = preference
         self.idx = (self.idx + 1) % self.buffer_size
 
-    def get_minibatch(self, n=32) -> List[Preference]:
-        indices = list(range(0, self.number_of_preferences))
-        minibatch_indices = np.random.choice(indices, size=n, replace=False)
+    def get_minibatches(self: "PreferenceBuffer", n=32) -> List[Preference]:
+        indices = np.random.permutation(list(range(0, self.number_of_preferences)))
 
-        return [self.preferences[i] for i in minibatch_indices]
+        batch_start_index = 0
+
+        while batch_start_index + n < len(self) + 1:
+            batch_indices = indices[batch_start_index:batch_start_index + n]
+            minibatch = [self.preferences[i] for i in batch_indices]
+            yield minibatch
+            batch_start_index += n
 
 
 class RewardModel(torch.nn.Module):
@@ -73,10 +78,10 @@ class RewardModel(torch.nn.Module):
 
 class RewardModellingProcess(Process):
     def __init__(
-        self: "RewardModellingProcess",
-        preference_queue: Queue,
-        reward_model_queue: Queue,
-        stop_queue: Queue,
+            self: "RewardModellingProcess",
+            preference_queue: Queue,
+            reward_model_queue: Queue,
+            stop_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -105,8 +110,8 @@ class RewardModellingProcess(Process):
                     self.evaluation_buffer.add(preference)
 
             if (
-                len(self.training_buffer) + len(self.evaluation_buffer)
-                < MIN_COMPARISONS_FOR_TRAINING
+                    len(self.training_buffer) + len(self.evaluation_buffer)
+                    < MIN_COMPARISONS_FOR_TRAINING
             ):
                 continue
 
