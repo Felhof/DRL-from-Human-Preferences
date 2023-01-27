@@ -1,5 +1,5 @@
 from multiprocessing import Process
-from typing import List
+from typing import List, Iterator
 
 import numpy as np
 from src.preferences import Preference, Queue
@@ -29,7 +29,7 @@ class PreferenceBuffer:
             self.preferences[self.idx] = preference
         self.idx = (self.idx + 1) % self.buffer_size
 
-    def get_minibatches(self: "PreferenceBuffer", n=32) -> List[Preference]:
+    def get_minibatches(self: "PreferenceBuffer", n=32) -> Iterator[List[Preference]]:
         indices = np.random.permutation(list(range(0, self.number_of_preferences)))
 
         batch_start_index = 0
@@ -95,6 +95,11 @@ class RewardModellingProcess(Process):
 
         self.reward_model_queue.put(self.reward_model)
 
+        self.reward_model_optimizer = torch.optim.Adam(
+            self.reward_model.parameters(),
+            lr=0.0001
+        )
+
     def run(self: "RewardModellingProcess") -> None:
         while True:
             if not self.stop_queue.empty():
@@ -128,4 +133,30 @@ class RewardModellingProcess(Process):
         self.reward_model_queue.put(self.reward_model)
 
     def train_reward_model_for_one_epoch(self):
+        for minibatch in self.training_buffer.get_minibatches():
+            estimated_rewards = []
+            preference_distribution = []
+
+            for preference in minibatch:
+                r1 = torch.sum(
+                    self.reward_model(torch.tensor(preference.segment1.get_observations()))
+                )
+                r2 = torch.sum(
+                    self.reward_model(torch.tensor(preference.segment2.get_observations()))
+                )
+                estimated_rewards.append([r1, r2])
+                preference_distribution.append([1. - preference.mu, preference.mu])
+
+            loss = nn.CrossEntropyLoss()(
+                input=torch.tensor(estimated_rewards),
+                target=torch.tensor(preference_distribution)
+            )
+
+            self.reward_model_optimizer.zero_grad()
+            loss.backward()
+            self.reward_model_optimizer.step()
+
+        self.evaluate_model()
+
+    def evaluate_model(self):
         pass

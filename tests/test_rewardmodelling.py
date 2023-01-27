@@ -3,6 +3,7 @@ import pytest
 import torch
 
 import src.rewardmodelling
+from src.preferences import Preference
 from src.rewardmodelling import PreferenceBuffer, RewardModel, RewardModellingProcess
 
 
@@ -15,13 +16,14 @@ def reward_modelling_process(mocker):
             stop_queue=None,
             training_buffer=None,
             evaluation_buffer=None,
+            reward_model_optimizer=None
     ):
         if preference_queue is None:
             preference_queue = mocker.Mock()
-            reward_model_queue.put = mocker.Mock()
 
         if reward_model_queue is None:
             reward_model_queue = mocker.Mock()
+            reward_model_queue.put = mocker.Mock()
 
         if stop_queue is None:
             stop_queue = mocker.Mock()
@@ -34,6 +36,9 @@ def reward_modelling_process(mocker):
             evaluation_buffer = mocker.Mock()
             evaluation_buffer.__len__ = mocker.Mock(return_value=1)
 
+        if reward_model_optimizer is None:
+            reward_model_optimizer = mocker.Mock()
+
         mocker.patch(
             "src.rewardmodelling.RewardModel",
             return_value=reward_model if reward_model is not None else mocker.Mock(),
@@ -45,6 +50,11 @@ def reward_modelling_process(mocker):
                 training_buffer,
                 evaluation_buffer,
             ],
+        )
+
+        mocker.patch(
+            "src.rewardmodelling.torch.optim.Adam",
+            return_value=reward_model_optimizer
         )
 
         reward_modeller = RewardModellingProcess(
@@ -268,3 +278,72 @@ def test_reward_modelling_process_run_trains_reward_model_when_enough_preference
             == trained_for_epochs
     )
     reward_model_queue.put.assert_called_with(reward_model)
+
+
+def test_reward_modelling_process_can_train_reward(mocker, reward_modelling_process):
+    # Given
+    observations1 = mocker.Mock()
+    segment1 = mocker.Mock()
+    segment1.get_observations = mocker.Mock(return_value=observations1)
+    observations2 = mocker.Mock()
+    segment2 = mocker.Mock()
+    segment2.get_observations = mocker.Mock(return_value=observations2)
+
+    preference = Preference(
+        segment1=segment1,
+        segment2=segment2,
+        mu=1.
+    )
+
+    training_buffer = mocker.Mock()
+    training_buffer.get_minibatches = mocker.Mock(return_value=[[preference]])
+
+    obs_tensor1 = mocker.Mock()
+    ons_tensor2 = mocker.Mock()
+
+    create_tensor = torch.tensor
+
+    def mock_tensor(items):
+        if items == observations1:
+            return obs_tensor1
+        if items == observations2:
+            return ons_tensor2
+        return create_tensor(items)
+
+    mocker.patch("src.rewardmodelling.torch.tensor", side_effect=mock_tensor)
+
+    model_rewards1 = create_tensor([0.1, 0.2, 0.3])
+    model_rewards2 = create_tensor([0.4, 0.5, 0.6])
+
+    def mock_reward_estimate(items):
+        if items == obs_tensor1:
+            return model_rewards1
+        if items == ons_tensor2:
+            return model_rewards2
+        return create_tensor(items)
+
+    reward_model = mocker.Mock(side_effect=mock_reward_estimate)
+
+    loss = mocker.Mock()
+    loss.backward = mocker.Mock()
+    mocker.patch("src.rewardmodelling.nn.CrossEntropyLoss.__call__", return_value=loss)
+
+    reward_model_optimizer = mocker.Mock()
+    reward_model_optimizer.zero_grad = mocker.Mock()
+    reward_model_optimizer.step = mocker.Mock()
+
+    reward_modeller = reward_modelling_process(training_buffer=training_buffer, reward_model=reward_model,
+                                               reward_model_optimizer=reward_model_optimizer)
+    reward_modeller.evaluate_model = mocker.Mock()
+
+    # When
+    reward_modeller.train_reward_model_for_one_epoch()
+
+    # Then
+    ce_kwargs = src.rewardmodelling.nn.CrossEntropyLoss.__call__.call_args.kwargs
+    assert torch.equal(ce_kwargs["input"], create_tensor([[0.6, 1.5]]))
+    assert torch.equal(ce_kwargs["target"], create_tensor([[0., 1.]]))
+    loss.backward.assert_called_once()
+    reward_modeller.reward_model_optimizer.zero_grad.assert_called_once()
+    reward_modeller.reward_model_optimizer.step.assert_called_once()
+    reward_modeller.evaluate_model.assert_called_once()
