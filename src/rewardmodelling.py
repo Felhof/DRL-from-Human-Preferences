@@ -132,25 +132,30 @@ class RewardModellingProcess(Process):
 
         self.reward_model_queue.put(self.reward_model)
 
-    def train_reward_model_for_one_epoch(self):
-        for minibatch in self.training_buffer.get_minibatches():
-            estimated_rewards = []
-            preference_distribution = []
+    def _get_loss_for_minibatch(self: "RewardModellingProcess", minibatch) -> torch.Tensor():
+        estimated_rewards = []
+        preference_distribution = []
 
-            for preference in minibatch:
-                r1 = torch.sum(
-                    self.reward_model(torch.tensor(preference.segment1.get_observations()))
-                )
-                r2 = torch.sum(
-                    self.reward_model(torch.tensor(preference.segment2.get_observations()))
-                )
-                estimated_rewards.append([r1, r2])
-                preference_distribution.append([1. - preference.mu, preference.mu])
-
-            loss = nn.CrossEntropyLoss()(
-                input=torch.tensor(estimated_rewards),
-                target=torch.tensor(preference_distribution)
+        for preference in minibatch:
+            r1 = torch.sum(
+                self.reward_model(torch.tensor(preference.segment1.get_observations()))
             )
+            r2 = torch.sum(
+                self.reward_model(torch.tensor(preference.segment2.get_observations()))
+            )
+            estimated_rewards.append([r1, r2])
+            preference_distribution.append([1. - preference.mu, preference.mu])
+
+        loss = nn.CrossEntropyLoss()(
+            input=torch.tensor(estimated_rewards),
+            target=torch.tensor(preference_distribution)
+        )
+
+        return loss
+
+    def train_reward_model_for_one_epoch(self: "RewardModellingProcess") -> None:
+        for minibatch in self.training_buffer.get_minibatches():
+            loss = self._get_loss_for_minibatch(minibatch)
 
             self.reward_model_optimizer.zero_grad()
             loss.backward()
@@ -158,5 +163,12 @@ class RewardModellingProcess(Process):
 
         self.evaluate_model()
 
-    def evaluate_model(self):
-        pass
+    def evaluate_model(self: "RewardModellingProcess") -> None:
+        self.reward_model.eval()
+        batch_losses = []
+        for minibatch in self.evaluation_buffer.get_minibatches():
+            batch_loss = self._get_loss_for_minibatch(minibatch).item()
+            batch_losses.append(batch_loss)
+        loss = np.mean(batch_losses)
+        print(f"Evaluation loss is: {loss}")
+        self.reward_model.train()
