@@ -70,12 +70,17 @@ def ask_for_evaluation(p_queue: ThreadQueue) -> None:
 
 
 class FeedbackCollectionProcess(Process):
-    def __init__(self: "FeedbackCollectionProcess", trajectory_queue: Queue) -> None:
+    def __init__(
+        self: "FeedbackCollectionProcess",
+        preference_queue: Queue,
+        trajectory_queue: Queue,
+        stop_queue: Queue,
+    ) -> None:
         super().__init__()
-        self.trajectory_queue: Queue = trajectory_queue
-        self.reward_modelling_queue = None
+        self.preference_queue = preference_queue
+        self.trajectory_queue = trajectory_queue
+        self.stop_queue = stop_queue
         self.segment_db = None
-        self.preference_elicitor = None
 
     def _update_segment_db(
         self: "FeedbackCollectionProcess", trajectory: Trajectory
@@ -113,14 +118,15 @@ class FeedbackCollectionProcess(Process):
 
     def run(self: "FeedbackCollectionProcess"):
         self.segment_db = SegmentDB()
-        self.reward_modelling_queue = Queue()
 
         while True:
-            if not self.trajectory_queue.empty():
-                msg = self.trajectory_queue.get()
-                if isinstance(msg, str) and msg == "END":
+            if not self.stop_queue.empty():
+                if self.stop_queue.get():
                     break
-                self._update_segment_db(msg)
+
+            if not self.trajectory_queue.empty():
+                trajectory = self.trajectory_queue.get()
+                self._update_segment_db(trajectory)
 
             if len(self.segment_db) > 0:
                 segment_pair = self.segment_db.query_segment_pairs()[0]
@@ -128,7 +134,7 @@ class FeedbackCollectionProcess(Process):
                 if preference == "I":
                     continue
                 mu = {"L": 0.0, "R": 1.0, "E": 0.5}[preference]
-                self.reward_modelling_queue.put(
+                self.preference_queue.put(
                     Preference(
                         segment1=segment_pair[0], segment2=segment_pair[1], mu=mu
                     )

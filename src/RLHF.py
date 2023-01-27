@@ -14,11 +14,16 @@ class RLHFWrapper:
         self.reward_model_queue = Queue()
         self.stop_reward_modelling_queue = Queue()
         self.trajectory_queue = Queue()
+        self.stop_feedback_collecting_queue = Queue()
         self.current_trajectory = []
 
     def start_rlhf(self: "RLHFWrapper") -> None:
         preference_queue = multiprocessing.Queue()
-        feedback_collecting_process = FeedbackCollectionProcess(self.trajectory_queue)
+        feedback_collecting_process = FeedbackCollectionProcess(
+            preference_queue=preference_queue,
+            trajectory_queue=self.trajectory_queue,
+            stop_queue=self.stop_feedback_collecting_queue,
+        )
         reward_modelling_process = RewardModellingProcess(
             preference_queue=preference_queue,
             reward_model_queue=self.reward_model_queue,
