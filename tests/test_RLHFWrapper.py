@@ -3,7 +3,7 @@ from unittest.mock import call
 
 import pytest
 
-from src.RLHF import RLHFWrapper, start_collecting_feedback, start_reward_modelling
+from src.RLHF import RLHFWrapper, start_reward_modelling
 import src.RLHF
 
 
@@ -18,7 +18,7 @@ def rlhf(mocker):
 @pytest.fixture
 def rlhf_with_reset(rlhf):
     def _create_rlhf_with_reset(
-        current_observation=None, next_observation=None, info=None
+            current_observation=None, next_observation=None, info=None
     ):
         rlhf_wrapper = rlhf
         rlhf_wrapper.current_observation = current_observation
@@ -34,12 +34,12 @@ def rlhf_with_reset(rlhf):
 @pytest.fixture
 def rlhf_with_step(rlhf):
     def _create_rlhf_with_step(
-        current_observation=None,
-        next_observation=None,
-        reward=0.0,
-        terminated=False,
-        truncated=False,
-        info=None,
+            current_observation=None,
+            next_observation=None,
+            reward=0.0,
+            terminated=False,
+            truncated=False,
+            info=None,
     ):
         rlhf_wrapper = rlhf
         rlhf_wrapper.current_observation = current_observation
@@ -62,7 +62,7 @@ def rlhf_with_reward_model_queue(mocker, rlhf_with_step):
     reward_model_queue = mocker.Mock()
 
     def _create_rlhf_with_reward_model_queue(
-        action=None, new_model_available=False, reward=1.0, **kwargs
+            action=None, new_model_available=False, reward=1.0, **kwargs
     ) -> RLHFWrapper:
         current_observation = kwargs.get("current_observation", None)
 
@@ -119,8 +119,8 @@ def test_start_rlhf_starts_other_processes(mocker):
 
 
 def test_step_when_no_new_model_available_returns_correct_values(
-    mocker,
-    rlhf_with_reward_model_queue,
+        mocker,
+        rlhf_with_reward_model_queue,
 ):
     # Given
     action = mocker.Mock()
@@ -156,8 +156,8 @@ def test_step_when_no_new_model_available_returns_correct_values(
 
 
 def test_step_when_new_model_available_returns_correct_values_and_updates_reward_model(
-    mocker,
-    rlhf_with_reward_model_queue,
+        mocker,
+        rlhf_with_reward_model_queue,
 ):
     # Given
     action = mocker.Mock()
@@ -206,7 +206,7 @@ def test_step_updates_current_observation(mocker, rlhf_with_reward_model_queue):
 
 
 def test_step_adds_current_observation_and_action_to_current_trajectory(
-    mocker, rlhf_with_reward_model_queue
+        mocker, rlhf_with_reward_model_queue
 ):
     # Given
     action = mocker.Mock()
@@ -229,7 +229,7 @@ def test_step_adds_current_observation_and_action_to_current_trajectory(
 
 
 def test_step_when_done_sends_current_trajectory_to_feedback_process(
-    mocker, rlhf_with_reward_model_queue
+        mocker, rlhf_with_reward_model_queue
 ):
     # Given
     action = mocker.Mock()
