@@ -1,9 +1,7 @@
-import multiprocessing
-from unittest.mock import call
-
 import pytest
 
-from src.RLHF import RLHFWrapper, start_reward_modelling
+import src.rewardmodelling
+from src.RLHF import RLHFWrapper
 import src.RLHF
 
 
@@ -100,18 +98,25 @@ def test_start_rlhf_starts_other_processes(mocker):
     reward_modelling_process = mocker.Mock()
     feedback_collecting_process = mocker.Mock()
 
-    mocker.patch("multiprocessing.Process", return_value=reward_modelling_process)
+    mocker.patch(
+        "src.RLHF.RewardModellingProcess", return_value=reward_modelling_process
+    )
     mocker.patch(
         "src.RLHF.FeedbackCollectionProcess", return_value=feedback_collecting_process
     )
+
+    preference_queue = mocker.Mock()
+    mocker.patch("src.RLHF.multiprocessing.Queue", return_value=preference_queue)
 
     # When
     rlhf = RLHFWrapper(environment=mocker.Mock())
     rlhf.start_rlhf()
 
     # Then
-    multiprocessing.Process.assert_called_once_with(
-        target=start_reward_modelling, args=(rlhf.reward_model_queue,)
+    src.RLHF.RewardModellingProcess.assert_called_once_with(
+        preference_queue=preference_queue,
+        reward_model_queue=rlhf.reward_model_queue,
+        stop_queue=rlhf.stop_reward_modelling_queue,
     )
     src.RLHF.FeedbackCollectionProcess.assert_called_once_with(rlhf.trajectory_queue)
     reward_modelling_process.start.assert_called_once()
