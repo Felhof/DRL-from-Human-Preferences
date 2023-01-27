@@ -104,15 +104,17 @@ class RewardModellingProcess(Process):
             if len(self.training_buffer) + len(self.evaluation_buffer) < MIN_COMPARISONS_FOR_TRAINING:
                 continue
 
-            self.train_reward_model()
+            self.update_reward_model()
 
-    def train_reward_model(self: "RewardModellingProcess") -> None:
+    def update_reward_model(self: "RewardModellingProcess") -> None:
         epochs = 1 if self.reward_model.has_completed_pretraining else 200
 
         for _ in range(epochs):
             self.train_reward_model_for_one_epoch()
 
         self.reward_model.has_completed_pretraining = True
+
+        self.reward_model_queue.put(self.reward_model)
 
     def train_reward_model_for_one_epoch(self):
         pass

@@ -223,14 +223,18 @@ def test_reward_modelling_process_run_trains_reward_model_when_enough_preference
     evaluation_buffer.__len__ = mocker.Mock(return_value=100)
     reward_model = mocker.Mock()
     reward_model.has_completed_pretraining = has_completed_pretraining
+    reward_model_queue = mocker.Mock()
+    reward_model_queue.put = mocker.Mock()
 
     reward_modelling_process = runnable_reward_modelling_process(
         reward_model=reward_model,
         training_buffer=training_buffer,
-        evaluation_buffer=evaluation_buffer
+        evaluation_buffer=evaluation_buffer,
+        reward_model_queue=reward_model_queue
     )
     reward_modelling_process.train_reward_model_for_one_epoch = mocker.Mock()
 
     reward_modelling_process.run()
 
     assert reward_modelling_process.train_reward_model_for_one_epoch.call_count == trained_for_epochs
+    reward_model_queue.put.assert_called_with(reward_model)
