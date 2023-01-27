@@ -35,7 +35,7 @@ class PreferenceBuffer:
         batch_start_index = 0
 
         while batch_start_index + n < len(self) + 1:
-            batch_indices = indices[batch_start_index:batch_start_index + n]
+            batch_indices = indices[batch_start_index : batch_start_index + n]
             minibatch = [self.preferences[i] for i in batch_indices]
             yield minibatch
             batch_start_index += n
@@ -78,10 +78,10 @@ class RewardModel(torch.nn.Module):
 
 class RewardModellingProcess(Process):
     def __init__(
-            self: "RewardModellingProcess",
-            preference_queue: Queue,
-            reward_model_queue: Queue,
-            stop_queue: Queue,
+        self: "RewardModellingProcess",
+        preference_queue: Queue,
+        reward_model_queue: Queue,
+        stop_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -96,8 +96,7 @@ class RewardModellingProcess(Process):
         self.reward_model_queue.put(self.reward_model)
 
         self.reward_model_optimizer = torch.optim.Adam(
-            self.reward_model.parameters(),
-            lr=0.0001
+            self.reward_model.parameters(), lr=0.0001
         )
 
     def run(self: "RewardModellingProcess") -> None:
@@ -115,8 +114,8 @@ class RewardModellingProcess(Process):
                     self.evaluation_buffer.add(preference)
 
             if (
-                    len(self.training_buffer) + len(self.evaluation_buffer)
-                    < MIN_COMPARISONS_FOR_TRAINING
+                len(self.training_buffer) + len(self.evaluation_buffer)
+                < MIN_COMPARISONS_FOR_TRAINING
             ):
                 continue
 
@@ -132,7 +131,9 @@ class RewardModellingProcess(Process):
 
         self.reward_model_queue.put(self.reward_model)
 
-    def _get_loss_for_minibatch(self: "RewardModellingProcess", minibatch) -> torch.Tensor():
+    def _get_loss_for_minibatch(
+        self: "RewardModellingProcess", minibatch
+    ) -> torch.Tensor():
         estimated_rewards = []
         preference_distribution = []
 
@@ -144,11 +145,11 @@ class RewardModellingProcess(Process):
                 self.reward_model(torch.tensor(preference.segment2.get_observations()))
             )
             estimated_rewards.append([r1, r2])
-            preference_distribution.append([1. - preference.mu, preference.mu])
+            preference_distribution.append([1.0 - preference.mu, preference.mu])
 
         loss = nn.CrossEntropyLoss()(
             input=torch.tensor(estimated_rewards),
-            target=torch.tensor(preference_distribution)
+            target=torch.tensor(preference_distribution),
         )
 
         return loss
