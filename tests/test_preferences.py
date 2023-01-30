@@ -1,5 +1,4 @@
 import builtins
-import threading
 
 import cv2
 import pytest
@@ -19,7 +18,7 @@ THREAD_QUEUE_COUNT = 2
 
 @pytest.fixture
 def db_with_segments(mocker):
-    def _create_segment_db(query_return_value=None, length=1):
+    def _create_segment_db(query_return_value=None, length=2):
         if query_return_value is None:
             query_return_value = [mocker.Mock()]
 
@@ -148,7 +147,7 @@ def test_segment_get_observations_gets_only_segment_observations(mocker):
     assert segment.get_observations() == [observation1, observation2, observation3]
 
 
-def test_segmentdb_store_segments_adds_segments_pairs_to_back_of_deque(mocker):
+def test_segmentdb_store_segments_adds_segments_to_list(mocker):
     segment1 = mocker.Mock()
     segment2 = mocker.Mock()
     segment3 = mocker.Mock()
@@ -165,7 +164,7 @@ def test_segmentdb_store_segments_adds_segments_pairs_to_back_of_deque(mocker):
     assert segment_db.segments[2] == segment3
 
 
-def test_segmentdb_query_segment_pairs_returns_n_pairs_of_unique_segments(mocker):
+def test_segmentdb_query_segment_pairs_returns_unique_pair_of_segments(mocker):
     segment1 = mocker.Mock()
     segment2 = mocker.Mock()
     segment3 = mocker.Mock()
@@ -289,6 +288,8 @@ def test_feedback_collection_process_sends_preferences_to_reward_modeller(
         queue_with_items,
         stop_queue_with_items,
 ):
+    mocker.patch("src.preferences.os.fdopen")
+
     trajectory = [(mocker.Mock(), mocker.Mock()) for _ in range(SEGMENT_LENGTH * 2)]
     segment1 = Segment(trajectory[:SEGMENT_LENGTH])
     segment2 = Segment(trajectory[SEGMENT_LENGTH: SEGMENT_LENGTH * 2])
@@ -361,8 +362,13 @@ def test_feedback_collection_process_can_generate_preference_from_segment_pair(
         feedback_collection_process, mocker
 ):
     # Given
-    segment1 = Segment([(mocker.Mock(), mocker.Mock()) for _ in range(5)])
-    segment2 = Segment([(mocker.Mock(), mocker.Mock()) for _ in range(5)])
+    def mock_framestack():
+        framestack = mocker.Mock()
+        framestack.__getitem__ = mocker.Mock(return_value=mocker.Mock())
+        return framestack
+
+    segment1 = Segment([(mock_framestack(), mocker.Mock()) for _ in range(5)])
+    segment2 = Segment([(mock_framestack(), mocker.Mock()) for _ in range(5)])
     segment_pair = (segment1, segment2)
     expected_preference = "R"
 
@@ -374,6 +380,7 @@ def test_feedback_collection_process_can_generate_preference_from_segment_pair(
         evaluation_thread=evaluation_thread
     )
 
+    mocker.patch("src.preferences.cv2.resize", return_value=mocker.Mock())
     mocker.patch("src.preferences.np.hstack", return_value=mocker.Mock())
     thread_queue = mocker.Mock()
     thread_queue.get = mocker.Mock(return_value="R")

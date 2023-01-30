@@ -1,17 +1,19 @@
 from dataclasses import dataclass
 import itertools
 from multiprocessing import Process, Queue
+import os
 from queue import Queue as ThreadQueue
+import sys
 from threading import Thread
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import cv2
 import numpy as np
 from src.utils import Trajectory
 
 SEGMENT_LENGTH = 300
-CLIP_BORDER_HEIGHT = 84
-CLIP_BORDER_WIDTH = 10
+CLIP_SIZE = 126
+CLIP_BORDER_WIDTH = 30
 
 
 @dataclass
@@ -40,14 +42,10 @@ class SegmentDB:
     def store_segments(self: "SegmentDB", new_segments: List[Segment]) -> None:
         self.segments.extend(new_segments)
 
-    def query_segment_pair(self: "SegmentDB", n: int = 1) -> Tuple[Segment, Segment]:
+    def query_segment_pair(self: "SegmentDB") -> Optional[Tuple[Segment, Segment]]:
 
         all_indices = list(range(len(self.segments)))
         possible_pair_indices = list(itertools.combinations(all_indices, 2))
-
-        assert len(possible_pair_indices) > len(
-            self.queried_pairs
-        ), "Not enough segments left to query."
 
         np.random.shuffle(possible_pair_indices)
 
@@ -59,6 +57,7 @@ class SegmentDB:
                 self.segments[possible_pair_index[0]],
                 self.segments[possible_pair_index[1]],
             )
+        return None
 
 
 def ask_for_evaluation(p_queue: ThreadQueue) -> None:
@@ -73,10 +72,10 @@ def ask_for_evaluation(p_queue: ThreadQueue) -> None:
 
 class FeedbackCollectionProcess(Process):
     def __init__(
-            self: "FeedbackCollectionProcess",
-            preference_queue: Queue,
-            trajectory_queue: Queue,
-            stop_queue: Queue,
+        self: "FeedbackCollectionProcess",
+        preference_queue: Queue,
+        trajectory_queue: Queue,
+        stop_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -85,18 +84,18 @@ class FeedbackCollectionProcess(Process):
         self.segment_db = None
 
     def _update_segment_db(
-            self: "FeedbackCollectionProcess", trajectory: Trajectory
+        self: "FeedbackCollectionProcess", trajectory: Trajectory
     ) -> None:
         segments: List[Segment] = [
-            Segment(trajectory[i: i + SEGMENT_LENGTH])
+            Segment(trajectory[i : i + SEGMENT_LENGTH])
             for i in range(0, len(trajectory), SEGMENT_LENGTH)
         ]
         self.segment_db.store_segments(segments)
 
     def get_preference_from_segment_pair(
-            self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
+        self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
     ) -> str:
-        border = np.zeros((CLIP_BORDER_HEIGHT, CLIP_BORDER_WIDTH), dtype=np.uint8)
+        border = np.zeros((CLIP_SIZE, CLIP_BORDER_WIDTH), dtype=np.uint8)
 
         clip1 = segment_pair[0].get_observations()
         clip2 = segment_pair[1].get_observations()
@@ -108,10 +107,18 @@ class FeedbackCollectionProcess(Process):
 
         cv2.namedWindow("ClipWindow")
         while evaluation_thread.is_alive():
-            for clip1_frame, clip2_frame in zip(clip1, clip2):
+            for framestack1, framestack2 in zip(clip1, clip2):
+                clip1_frame = framestack1[-1]
+                clip2_frame = framestack2[-1]
+                clip1_frame = cv2.resize(
+                    clip1_frame, (CLIP_SIZE, CLIP_SIZE), interpolation=cv2.INTER_AREA
+                )
+                clip2_frame = cv2.resize(
+                    clip2_frame, (CLIP_SIZE, CLIP_SIZE), interpolation=cv2.INTER_AREA
+                )
                 frame = np.hstack((clip1_frame, border, clip2_frame))
                 cv2.imshow("ClipWindow", frame)
-                cv2.waitKey(25)
+                cv2.waitKey(50)
         cv2.destroyWindow("ClipWindow")
 
         preference = p_queue.get()
@@ -119,6 +126,13 @@ class FeedbackCollectionProcess(Process):
         return preference
 
     def run(self: "FeedbackCollectionProcess"):
+
+        """
+        FeedbackCollectionProcess will be a child process and so stdin is automatically closed, resulting in an error when asking for input.
+        Workaround courtesy of: https://github.com/mrahtz/learning-from-human-preferences/blob/3fca07c4c3fd20bec307f4405684461437d9e215/run.py#L287
+        """
+        sys.stdin = os.fdopen(0)
+
         self.segment_db = SegmentDB()
 
         while True:
@@ -130,8 +144,11 @@ class FeedbackCollectionProcess(Process):
                 trajectory = self.trajectory_queue.get()
                 self._update_segment_db(trajectory)
 
-            if len(self.segment_db) > 0:
-                segment_pair = self.segment_db.query_segment_pair()
+            if len(self.segment_db) > 1:
+                maybe_segment_pair = self.segment_db.query_segment_pair()
+                if maybe_segment_pair is None:
+                    continue
+                segment_pair = maybe_segment_pair
                 preference = self.get_preference_from_segment_pair(segment_pair)
                 if preference == "I":
                     continue
