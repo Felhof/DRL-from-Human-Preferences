@@ -54,3 +54,7 @@ class RLHFWrapper:
             self.current_trajectory = []
 
         return obs, reward, terminated, truncated, info
+
+    def stop(self: "RLHFWrapper") -> None:
+        self.stop_feedback_collecting_queue.put(True)
+        self.stop_reward_modelling_queue.put(True)
