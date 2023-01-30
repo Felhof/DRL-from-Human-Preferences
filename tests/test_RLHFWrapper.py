@@ -1,4 +1,6 @@
+import numpy as np
 import pytest
+import torch
 
 import src.rewardmodelling
 from src.RLHF import RLHFWrapper
@@ -15,38 +17,36 @@ def rlhf(mocker):
 
 @pytest.fixture
 def rlhf_with_reset(rlhf):
-    def _create_rlhf_with_reset(
-        current_observation=None, next_observation=None, info=None
-    ):
+    def _create_rlhf_with_reset(current_observation=None, next_observation=None):
         rlhf_wrapper = rlhf
         rlhf_wrapper.current_observation = current_observation
-        rlhf_wrapper.environment.reset.return_value = (
-            next_observation,
-            info,
-        )
+        rlhf_wrapper.environment.reset.return_value = next_observation
         return rlhf_wrapper
 
     return _create_rlhf_with_reset
 
 
 @pytest.fixture
-def rlhf_with_step(rlhf):
+def rlhf_with_step(mocker, rlhf):
     def _create_rlhf_with_step(
-        current_observation=None,
-        next_observation=None,
-        reward=0.0,
-        terminated=False,
-        truncated=False,
-        info=None,
+            action=None,
+            current_observation=None,
+            next_observation=None,
+            reward=0.0,
+            done=False,
+            info=None,
     ):
         rlhf_wrapper = rlhf
         rlhf_wrapper.current_observation = current_observation
-        rlhf_wrapper.environment.step.return_value = (
-            next_observation,
-            reward,
-            terminated,
-            truncated,
-            info,
+        rlhf_wrapper.environment.step = mocker.Mock(
+            side_effect=lambda a: (
+                next_observation,
+                reward,
+                done,
+                info,
+            )
+            if a == action
+            else mocker.Mock()
         )
         return rlhf_wrapper
 
@@ -55,32 +55,53 @@ def rlhf_with_step(rlhf):
 
 @pytest.fixture
 def rlhf_with_reward_model_queue(mocker, rlhf_with_step):
-    new_reward_model = mocker.Mock()
-    old_reward_model = mocker.Mock()
     reward_model_queue = mocker.Mock()
 
     def _create_rlhf_with_reward_model_queue(
-        action=None, new_model_available=False, reward=1.0, **kwargs
+            new_model_available=False, np_observation=mocker.Mock(), reward=1.0, **kwargs
     ) -> RLHFWrapper:
-        current_observation = kwargs.get("current_observation", None)
 
-        def mock_reward_model(input_observation, input_action):
-            if input_action == action and input_observation == current_observation:
-                return reward
-            return -reward
+        next_observation = kwargs.get("next_observation", None)
 
-        def mock_new_reward_model(input_observation, input_action):
+        tensor_observation = mocker.Mock()
+
+        create_np_array = np.array
+
+        def mock_array_creation(o):
+            return np_observation if o == next_observation else create_np_array(o)
+
+        mocker.patch(
+            "src.RLHF.np.array",
+            side_effect=mock_array_creation,
+        )
+
+        create_tensor = torch.tensor
+
+        def mock_tensor_creation(o, **kwargs):
+            return tensor_observation if o == np_observation else create_tensor(o)
+
+        mocker.patch(
+            "src.RLHF.torch.tensor",
+            side_effect=mock_tensor_creation
+        )
+
+        def mock_reward_model(input_observation):
+            if input_observation == tensor_observation:
+                return torch.tensor(reward)
+            return torch.tensor(-reward)
+
+        def mock_new_reward_model(input_observation):
             if new_model_available:
-                return mock_reward_model(input_observation, input_action)
-            return -reward
+                return mock_reward_model(input_observation)
+            return torch.tensor(-reward)
 
-        def mock_old_reward_model(input_observation, input_action):
+        def mock_old_reward_model(input_observation):
             if not new_model_available:
-                return mock_reward_model(input_observation, input_action)
-            return -reward
+                return mock_reward_model(input_observation)
+            return torch.tensor(-reward)
 
-        new_reward_model.get_reward = mocker.Mock(side_effect=mock_new_reward_model)
-        old_reward_model.get_reward = mocker.Mock(side_effect=mock_old_reward_model)
+        new_reward_model = mocker.Mock(side_effect=mock_new_reward_model)
+        old_reward_model = mocker.Mock(side_effect=mock_old_reward_model)
         reward_model_queue.empty = mocker.Mock(return_value=not new_model_available)
         reward_model_queue.get = mocker.Mock(return_value=new_reward_model)
 
@@ -93,7 +114,7 @@ def rlhf_with_reward_model_queue(mocker, rlhf_with_step):
     return _create_rlhf_with_reward_model_queue
 
 
-def test_start_rlhf_starts_other_processes(mocker):
+def test_start_rlhf_starts_other_processes(mocker, rlhf_with_reward_model_queue):
     # Given
     reward_modelling_process = mocker.Mock()
     feedback_collecting_process = mocker.Mock()
@@ -109,7 +130,7 @@ def test_start_rlhf_starts_other_processes(mocker):
     mocker.patch("src.RLHF.multiprocessing.Queue", return_value=preference_queue)
 
     # When
-    rlhf = RLHFWrapper(environment=mocker.Mock())
+    rlhf = rlhf_with_reward_model_queue(new_model_available=True)
     rlhf.start_rlhf()
 
     # Then
@@ -128,8 +149,8 @@ def test_start_rlhf_starts_other_processes(mocker):
 
 
 def test_step_when_no_new_model_available_returns_correct_values(
-    mocker,
-    rlhf_with_reward_model_queue,
+        mocker,
+        rlhf_with_reward_model_queue,
 ):
     # Given
     action = mocker.Mock()
@@ -151,22 +172,20 @@ def test_step_when_no_new_model_available_returns_correct_values(
     (
         received_obs,
         received_reward,
-        terminated,
-        truncated,
+        done,
         received_info,
     ) = rlhf_wrapper.step(action)
 
     # Then
     assert received_obs == expected_observation
     assert received_reward == expected_reward
-    assert not terminated
-    assert not truncated
+    assert not done
     assert received_info == expected_info
 
 
 def test_step_when_new_model_available_returns_correct_values_and_updates_reward_model(
-    mocker,
-    rlhf_with_reward_model_queue,
+        mocker,
+        rlhf_with_reward_model_queue,
 ):
     # Given
     action = mocker.Mock()
@@ -185,15 +204,14 @@ def test_step_when_new_model_available_returns_correct_values_and_updates_reward
     )
 
     # When
-    received_obs, reward, terminated, truncated, received_info = rlhf_wrapper.step(
+    received_obs, reward, done, received_info = rlhf_wrapper.step(
         action
     )
 
     # Then
     assert received_obs == expected_observation
     assert reward == expected_reward
-    assert not terminated
-    assert not truncated
+    assert not done
     assert received_info == expected_info
 
 
@@ -201,10 +219,11 @@ def test_step_updates_current_observation(mocker, rlhf_with_reward_model_queue):
     # Given
     action = mocker.Mock()
     info = {"k": "v"}
+    next_observation = mocker.Mock()
     expected_observation = mocker.Mock()
 
     rlhf_wrapper = rlhf_with_reward_model_queue(
-        action=action, info=info, next_observation=expected_observation
+        action=action, info=info, next_observation=next_observation, np_observation=expected_observation
     )
 
     # When
@@ -215,7 +234,7 @@ def test_step_updates_current_observation(mocker, rlhf_with_reward_model_queue):
 
 
 def test_step_adds_current_observation_and_action_to_current_trajectory(
-    mocker, rlhf_with_reward_model_queue
+        mocker, rlhf_with_reward_model_queue
 ):
     # Given
     action = mocker.Mock()
@@ -238,7 +257,7 @@ def test_step_adds_current_observation_and_action_to_current_trajectory(
 
 
 def test_step_when_done_sends_current_trajectory_to_feedback_process(
-    mocker, rlhf_with_reward_model_queue
+        mocker, rlhf_with_reward_model_queue
 ):
     # Given
     action = mocker.Mock()
@@ -254,7 +273,7 @@ def test_step_when_done_sends_current_trajectory_to_feedback_process(
         info=info,
         current_observation=current_observation,
         next_observation=next_observation,
-        terminated=True,
+        done=True,
     )
 
     rlhf_wrapper.current_trajectory = current_trajectory
@@ -275,27 +294,21 @@ def test_reset_returns_correct_values(mocker, rlhf_with_reset):
     expected_observation = mocker.Mock()
 
     rlhf_wrapper = rlhf_with_reset(
-        info=expected_info,
         next_observation=expected_observation,
     )
 
     # When
-    (
-        next_observation,
-        received_info,
-    ) = rlhf_wrapper.reset()
+    next_observation = rlhf_wrapper.reset()
 
     # Then
     assert next_observation == expected_observation
-    assert received_info == received_info
 
 
 def test_reset_updates_current_observation(mocker, rlhf_with_reset):
     # Given
-    info = {"k": "v"}
     next_observation = mocker.Mock()
 
-    rlhf_wrapper = rlhf_with_reset(info=info, next_observation=next_observation)
+    rlhf_wrapper = rlhf_with_reset(next_observation=next_observation)
 
     # When
     rlhf_wrapper.reset()
@@ -306,11 +319,10 @@ def test_reset_updates_current_observation(mocker, rlhf_with_reset):
 
 def test_reset_clears_trajectory_queue(mocker, rlhf_with_reset):
     # Given
-    info = {"k": "v"}
     next_observation = mocker.Mock()
     current_trajectory = mocker.Mock()
 
-    rlhf_wrapper = rlhf_with_reset(info=info, next_observation=next_observation)
+    rlhf_wrapper = rlhf_with_reset(next_observation=next_observation)
     rlhf_wrapper.current_trajectory = current_trajectory
 
     # When
