@@ -73,10 +73,10 @@ def ask_for_evaluation(p_queue: ThreadQueue) -> None:
 
 class FeedbackCollectionProcess(Process):
     def __init__(
-        self: "FeedbackCollectionProcess",
-        preference_queue: Queue,
-        trajectory_queue: Queue,
-        stop_queue: Queue,
+            self: "FeedbackCollectionProcess",
+            preference_queue: Queue,
+            trajectory_queue: Queue,
+            stop_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -85,16 +85,16 @@ class FeedbackCollectionProcess(Process):
         self.segment_db = None
 
     def _update_segment_db(
-        self: "FeedbackCollectionProcess", trajectory: Trajectory
+            self: "FeedbackCollectionProcess", trajectory: Trajectory
     ) -> None:
         segments: List[Segment] = [
-            Segment(trajectory[i : i + SEGMENT_LENGTH])
+            Segment(trajectory[i: i + SEGMENT_LENGTH])
             for i in range(0, len(trajectory), SEGMENT_LENGTH)
         ]
         self.segment_db.store_segments(segments)
 
     def get_preference_from_segment_pair(
-        self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
+            self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
     ) -> str:
         border = np.zeros((CLIP_BORDER_HEIGHT, CLIP_BORDER_WIDTH), dtype=np.uint8)
 
@@ -126,7 +126,7 @@ class FeedbackCollectionProcess(Process):
                 if self.stop_queue.get():
                     break
 
-            if not self.trajectory_queue.empty():
+            while not self.trajectory_queue.empty():
                 trajectory = self.trajectory_queue.get()
                 self._update_segment_db(trajectory)
 
