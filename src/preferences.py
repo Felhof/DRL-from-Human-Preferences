@@ -1,3 +1,5 @@
+import logging
+import logging.handlers
 from dataclasses import dataclass
 import itertools
 from multiprocessing import Process, Queue
@@ -72,10 +74,11 @@ def ask_for_evaluation(p_queue: ThreadQueue) -> None:
 
 class FeedbackCollectionProcess(Process):
     def __init__(
-        self: "FeedbackCollectionProcess",
-        preference_queue: Queue,
-        trajectory_queue: Queue,
-        stop_queue: Queue,
+            self: "FeedbackCollectionProcess",
+            preference_queue: Queue,
+            trajectory_queue: Queue,
+            stop_queue: Queue,
+            log_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -83,17 +86,19 @@ class FeedbackCollectionProcess(Process):
         self.stop_queue = stop_queue
         self.segment_db = None
 
+        self.logger = logging.getLogger(self.name)
+
     def _update_segment_db(
-        self: "FeedbackCollectionProcess", trajectory: Trajectory
+            self: "FeedbackCollectionProcess", trajectory: Trajectory
     ) -> None:
         segments: List[Segment] = [
-            Segment(trajectory[i : i + SEGMENT_LENGTH])
+            Segment(trajectory[i: i + SEGMENT_LENGTH])
             for i in range(0, len(trajectory), SEGMENT_LENGTH)
         ]
         self.segment_db.store_segments(segments)
 
     def get_preference_from_segment_pair(
-        self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
+            self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
     ) -> str:
         border = np.zeros((CLIP_SIZE, CLIP_BORDER_WIDTH), dtype=np.uint8)
 
@@ -126,6 +131,7 @@ class FeedbackCollectionProcess(Process):
         return preference
 
     def run(self: "FeedbackCollectionProcess"):
+        self.logger.info("Starting preference collection process.")
 
         """
         FeedbackCollectionProcess will be a child process and so stdin is automatically closed, resulting in an error when asking for input.
@@ -138,21 +144,28 @@ class FeedbackCollectionProcess(Process):
         while True:
             if not self.stop_queue.empty():
                 if self.stop_queue.get():
+                    self.logger.info("Received stop signal.")
                     break
 
             while not self.trajectory_queue.empty():
+                self.logger.info("Getting trajectory from queue.")
                 trajectory = self.trajectory_queue.get()
                 self._update_segment_db(trajectory)
 
             if len(self.segment_db) > 1:
+                self.logger.info("Querying segment pair.")
                 maybe_segment_pair = self.segment_db.query_segment_pair()
                 if maybe_segment_pair is None:
+                    self.logger.info("No unqueried segment pair found.")
                     continue
                 segment_pair = maybe_segment_pair
+                self.logger.info("Found unqueried segment pair. Asking user for preference.")
                 preference = self.get_preference_from_segment_pair(segment_pair)
                 if preference == "I":
+                    self.logger.info("User deemed segment pair incomparable.")
                     continue
                 mu = {"L": 0.0, "R": 1.0, "E": 0.5}[preference]
+                self.logger.info(f"User expressed preference: {preference}. Putting preference in queue.")
                 self.preference_queue.put(
                     Preference(
                         segment1=segment_pair[0], segment2=segment_pair[1], mu=mu

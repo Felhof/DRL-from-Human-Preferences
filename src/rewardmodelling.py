@@ -1,4 +1,7 @@
+import logging
+import logging.handlers
 from multiprocessing import Process
+from time import sleep
 from typing import List, Iterator
 
 import numpy as np
@@ -35,7 +38,7 @@ class PreferenceBuffer:
         batch_start_index = 0
 
         while batch_start_index + n < len(self) + 1:
-            batch_indices = indices[batch_start_index : batch_start_index + n]
+            batch_indices = indices[batch_start_index: batch_start_index + n]
             minibatch = [self.preferences[i] for i in batch_indices]
             yield minibatch
             batch_start_index += n
@@ -78,10 +81,11 @@ class RewardModel(torch.nn.Module):
 
 class RewardModellingProcess(Process):
     def __init__(
-        self: "RewardModellingProcess",
-        preference_queue: Queue,
-        reward_model_queue: Queue,
-        stop_queue: Queue,
+            self: "RewardModellingProcess",
+            preference_queue: Queue,
+            reward_model_queue: Queue,
+            stop_queue: Queue,
+            log_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -99,30 +103,46 @@ class RewardModellingProcess(Process):
             self.reward_model.parameters(), lr=0.0001
         )
 
+        self.logger = logging.getLogger(self.name)
+
     def run(self: "RewardModellingProcess") -> None:
+        self.logger.info("Starting reward modelling process.")
         while True:
             if not self.stop_queue.empty():
                 if self.stop_queue.get():
+                    self.logger.info("Received stop signal.")
                     break
+
+            if self.preference_queue.empty():
+                self.logger.info("No preferences available currently.")
+                sleep(5)
 
             while not self.preference_queue.empty():
                 preference = self.preference_queue.get()
                 use_for_training = np.random.binomial(1, p=1 - EVALUATION_FREQ)
                 if use_for_training:
+                    self.logger.info("Got preference and adding it to the training buffer.")
                     self.training_buffer.add(preference)
                 else:
+                    self.logger.info("Got preference and adding it to the evaluation buffer.")
                     self.evaluation_buffer.add(preference)
 
             if (
-                len(self.training_buffer) + len(self.evaluation_buffer)
-                < MIN_COMPARISONS_FOR_TRAINING
+                    len(self.training_buffer) + len(self.evaluation_buffer)
+                    < MIN_COMPARISONS_FOR_TRAINING
             ):
+                self.logger.info("Not enough preferences for training the reward model yet.")
                 continue
 
             self.update_reward_model()
 
     def update_reward_model(self: "RewardModellingProcess") -> None:
-        epochs = 1 if self.reward_model.has_completed_pretraining else 200
+        if self.reward_model.has_completed_pretraining:
+            self.logger.info("Training model for one epoch.")
+            epochs = 1
+        else:
+            self.logger.info("Model is not pretrained yet so training for 200 epochs.")
+            epochs = 200
 
         for _ in range(epochs):
             self.train_reward_model_for_one_epoch()
@@ -132,7 +152,7 @@ class RewardModellingProcess(Process):
         self.reward_model_queue.put(self.reward_model)
 
     def _get_loss_for_minibatch(
-        self: "RewardModellingProcess", minibatch
+            self: "RewardModellingProcess", minibatch
     ) -> torch.Tensor():
         estimated_rewards = []
         preference_distribution = []
@@ -162,6 +182,7 @@ class RewardModellingProcess(Process):
             loss.backward()
             self.reward_model_optimizer.step()
 
+        self.logger.info("Finished training for one epoch. Evaluating.")
         self.evaluate_model()
 
     def evaluate_model(self: "RewardModellingProcess") -> None:
@@ -171,5 +192,5 @@ class RewardModellingProcess(Process):
             batch_loss = self._get_loss_for_minibatch(minibatch).item()
             batch_losses.append(batch_loss)
         loss = np.mean(batch_losses)
-        print(f"Evaluation loss is: {loss}")
+        self.logger.info(f"Finished evaluating model. Evaluation loss is: {loss}")
         self.reward_model.train()
