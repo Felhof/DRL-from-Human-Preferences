@@ -261,8 +261,14 @@ def test_step_adds_current_observation_and_action_to_current_trajectory(
     assert rlhf_wrapper.current_trajectory[-1] == (current_observation, action)
 
 
+@pytest.mark.parametrize(
+    "trajectory_queue_is_full, expected_put_call_count", [(True, 0), (False, 1)]
+)
 def test_step_when_done_sends_current_trajectory_to_feedback_process(
-    mocker, rlhf_with_reward_model_queue
+    trajectory_queue_is_full,
+    expected_put_call_count,
+    mocker,
+    rlhf_with_reward_model_queue,
 ):
     # Given
     action = mocker.Mock()
@@ -271,6 +277,7 @@ def test_step_when_done_sends_current_trajectory_to_feedback_process(
     next_observation = mocker.Mock()
     trajectory_queue = mocker.Mock()
     trajectory_queue.put = mocker.Mock()
+    trajectory_queue.full = mocker.Mock(return_value=trajectory_queue_is_full)
     current_trajectory = mocker.Mock()
 
     rlhf_wrapper = rlhf_with_reward_model_queue(
@@ -288,8 +295,9 @@ def test_step_when_done_sends_current_trajectory_to_feedback_process(
     rlhf_wrapper.step(action)
 
     # Then
-    assert rlhf_wrapper.trajectory_queue.put.call_count == 1
-    assert rlhf_wrapper.trajectory_queue.put.called_with(current_trajectory)
+    assert rlhf_wrapper.trajectory_queue.put.call_count == expected_put_call_count
+    if not trajectory_queue_is_full:
+        assert rlhf_wrapper.trajectory_queue.put.called_with(current_trajectory)
     assert rlhf_wrapper.current_trajectory == []
 
 

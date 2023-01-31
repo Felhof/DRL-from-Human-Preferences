@@ -11,6 +11,8 @@ from src.loglistening import LogListener
 from src.preferences import FeedbackCollectionProcess
 from src.rewardmodelling import RewardModel, RewardModellingProcess
 
+TRAJECTORY_QUEUE_CAPACITY = 5
+
 
 class RLHFWrapper(gym.Wrapper):
     def __init__(self: "RLHFWrapper", environment: gym.Env) -> None:
@@ -20,7 +22,7 @@ class RLHFWrapper(gym.Wrapper):
         self.reward_model: RewardModel = None
         self.reward_model_queue = Queue()
         self.stop_reward_modelling_queue = Queue()
-        self.trajectory_queue = Queue()
+        self.trajectory_queue = Queue(TRAJECTORY_QUEUE_CAPACITY)
         self.stop_feedback_collecting_queue = Queue()
         self.current_trajectory = []
         self.feedback_collecting_process = None
@@ -82,8 +84,16 @@ class RLHFWrapper(gym.Wrapper):
         self.current_observation = np.array(obs)
 
         if done:
-            self.logger.info("Episode ended. Putting trajectory in queue.")
-            self.trajectory_queue.put(self.current_trajectory)
+            self.logger.info("Episode ended.")
+            if not self.trajectory_queue.full():
+                self.logger.info(
+                    "Putting the current trajectory in the trajectory queue."
+                )
+                self.trajectory_queue.put(self.current_trajectory)
+            else:
+                self.logger.info(
+                    "Trajectory queue is full. Dropping current trajectory."
+                )
             self.current_trajectory = []
 
         return obs, reward.item(), done, info

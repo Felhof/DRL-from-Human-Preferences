@@ -16,6 +16,7 @@ from src.utils import Trajectory
 SEGMENT_LENGTH = 300
 CLIP_SIZE = 126
 CLIP_BORDER_WIDTH = 30
+TRAJECTORY_QUEUE_CAPACITY = 5
 
 
 @dataclass
@@ -146,13 +147,23 @@ class FeedbackCollectionProcess(Process):
                     self.logger.info("Received stop signal.")
                     break
 
-            while not self.trajectory_queue.empty():
-                self.logger.info("Getting trajectory from queue.")
+            self.logger.info(
+                f"Trying to get up to {TRAJECTORY_QUEUE_CAPACITY} trajectories from the trajectory queue."
+            )
+
+            for _ in range(TRAJECTORY_QUEUE_CAPACITY):
+                if self.trajectory_queue.empty():
+                    self.logger.info("No more trajectories in the trajectory queue.")
+                    break
+
                 trajectory = self.trajectory_queue.get()
+                self.logger.info(
+                    "Got a trajectory from the trajectory queue and putting it in the DB."
+                )
                 self._update_segment_db(trajectory)
 
             if len(self.segment_db) > 1:
-                self.logger.info("Querying segment pair.")
+                self.logger.info("Querying segment pair to ask for preference.")
                 maybe_segment_pair = self.segment_db.query_segment_pair()
                 if maybe_segment_pair is None:
                     self.logger.info("No unqueried segment pair found.")
