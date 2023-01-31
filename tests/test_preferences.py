@@ -63,6 +63,7 @@ def feedback_collection_process(
         mocker.patch("src.preferences.cv2.waitKey")
         mocker.patch("src.preferences.cv2.destroyWindow")
         mocker.patch("src.preferences.Thread", return_value=evaluation_thread)
+        mocker.patch("src.preferences.logging.getLogger", return_value=mocker.Mock())
 
         feedback_collection = FeedbackCollectionProcess(
             preference_queue=preference_queue,
