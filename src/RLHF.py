@@ -37,10 +37,9 @@ class RLHFWrapper(gym.Wrapper):
         self.log_listener.start()
 
         log_queue_handler = logging.handlers.QueueHandler(self.log_queue)
-        logger = logging.getLogger("main")
-        logger.addHandler(log_queue_handler)
-        logger.setLevel(logging.DEBUG)
-        self.logger = logger
+        root_logger = logging.getLogger()
+        root_logger.addHandler(log_queue_handler)
+        self.logger = logging.getLogger("main")
 
         preference_queue = multiprocessing.Queue()
         self.feedback_collecting_process = FeedbackCollectionProcess(

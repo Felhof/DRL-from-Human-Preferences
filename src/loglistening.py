@@ -28,28 +28,24 @@ class LogListener(Process):
         super().__init__()
         self.queue = queue
         self.directory = LOG_DIRECTORY_PATH
-        level = {
+        self.level = {
             "DEBUG": logging.DEBUG,
             "INFO": logging.INFO,
             "WARN": logging.WARN,
             "ERROR": logging.ERROR,
             "CRITICAL": logging.CRITICAL,
         }[levelcode]
-
-        logger = logging.getLogger()
-        logger.setLevel(level)
-
-        file_handler = logging.FileHandler(f"{self.directory}/logs.log")
-        file_handler.setLevel(level)
-        file_handler.setFormatter(file_formatter)
-        logger.addHandler(file_handler)
-
-        # console_handler = logging.StreamHandler()
-        # console_handler.setLevel(level)
-        # console_handler.setFormatter(console_formatter)
-        # logger.addHandler(console_handler)
+        root_logger = logging.getLogger()
+        root_logger.setLevel(self.level)
 
     def run(self: "LogListener") -> None:
+
+        root_logger = logging.getLogger()
+        file_handler = logging.FileHandler(f"{self.directory}/logs.log")
+        file_handler.setLevel(self.level)
+        file_handler.setFormatter(file_formatter)
+        root_logger.addHandler(file_handler)
+
         while True:
             while not self.queue.empty():
                 record = self.queue.get()
