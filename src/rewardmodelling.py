@@ -38,7 +38,7 @@ class PreferenceBuffer:
         batch_start_index = 0
 
         while batch_start_index + n < len(self) + 1:
-            batch_indices = indices[batch_start_index: batch_start_index + n]
+            batch_indices = indices[batch_start_index : batch_start_index + n]
             minibatch = [self.preferences[i] for i in batch_indices]
             yield minibatch
             batch_start_index += n
@@ -81,11 +81,10 @@ class RewardModel(torch.nn.Module):
 
 class RewardModellingProcess(Process):
     def __init__(
-            self: "RewardModellingProcess",
-            preference_queue: Queue,
-            reward_model_queue: Queue,
-            stop_queue: Queue,
-            log_queue: Queue,
+        self: "RewardModellingProcess",
+        preference_queue: Queue,
+        reward_model_queue: Queue,
+        stop_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -121,17 +120,23 @@ class RewardModellingProcess(Process):
                 preference = self.preference_queue.get()
                 use_for_training = np.random.binomial(1, p=1 - EVALUATION_FREQ)
                 if use_for_training:
-                    self.logger.info("Got preference and adding it to the training buffer.")
+                    self.logger.info(
+                        "Got preference and adding it to the training buffer."
+                    )
                     self.training_buffer.add(preference)
                 else:
-                    self.logger.info("Got preference and adding it to the evaluation buffer.")
+                    self.logger.info(
+                        "Got preference and adding it to the evaluation buffer."
+                    )
                     self.evaluation_buffer.add(preference)
 
             if (
-                    len(self.training_buffer) + len(self.evaluation_buffer)
-                    < MIN_COMPARISONS_FOR_TRAINING
+                len(self.training_buffer) + len(self.evaluation_buffer)
+                < MIN_COMPARISONS_FOR_TRAINING
             ):
-                self.logger.info("Not enough preferences for training the reward model yet.")
+                self.logger.info(
+                    "Not enough preferences for training the reward model yet."
+                )
                 continue
 
             self.update_reward_model()
@@ -152,7 +157,7 @@ class RewardModellingProcess(Process):
         self.reward_model_queue.put(self.reward_model)
 
     def _get_loss_for_minibatch(
-            self: "RewardModellingProcess", minibatch
+        self: "RewardModellingProcess", minibatch
     ) -> torch.Tensor():
         estimated_rewards = []
         preference_distribution = []

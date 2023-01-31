@@ -1,7 +1,6 @@
 import logging
 import logging.handlers
 from multiprocessing import Queue
-import multiprocessing
 from typing import Any
 
 import gym
@@ -26,33 +25,30 @@ class RLHFWrapper(gym.Wrapper):
         self.current_trajectory = []
         self.feedback_collecting_process = None
         self.reward_modelling_process = None
-        self.log_queue = Queue()
         self.logger = None
         self.log_listener = None
 
     def start_rlhf(self: "RLHFWrapper") -> None:
-        self.log_listener = LogListener(
-            queue=self.log_queue
-        )
+        log_queue = Queue()
+
+        self.log_listener = LogListener(queue=log_queue)
         self.log_listener.start()
 
-        log_queue_handler = logging.handlers.QueueHandler(self.log_queue)
+        log_queue_handler = logging.handlers.QueueHandler(log_queue)
         root_logger = logging.getLogger()
         root_logger.addHandler(log_queue_handler)
         self.logger = logging.getLogger("main")
 
-        preference_queue = multiprocessing.Queue()
+        preference_queue = Queue()
         self.feedback_collecting_process = FeedbackCollectionProcess(
             preference_queue=preference_queue,
             trajectory_queue=self.trajectory_queue,
             stop_queue=self.stop_feedback_collecting_queue,
-            log_queue=self.log_queue,
         )
         self.reward_modelling_process = RewardModellingProcess(
             preference_queue=preference_queue,
             reward_model_queue=self.reward_model_queue,
             stop_queue=self.stop_reward_modelling_queue,
-            log_queue=self.log_queue,
         )
         self.feedback_collecting_process.start()
         self.reward_modelling_process.start()

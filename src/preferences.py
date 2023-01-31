@@ -74,11 +74,10 @@ def ask_for_evaluation(p_queue: ThreadQueue) -> None:
 
 class FeedbackCollectionProcess(Process):
     def __init__(
-            self: "FeedbackCollectionProcess",
-            preference_queue: Queue,
-            trajectory_queue: Queue,
-            stop_queue: Queue,
-            log_queue: Queue,
+        self: "FeedbackCollectionProcess",
+        preference_queue: Queue,
+        trajectory_queue: Queue,
+        stop_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -89,16 +88,16 @@ class FeedbackCollectionProcess(Process):
         self.logger = logging.getLogger(self.name)
 
     def _update_segment_db(
-            self: "FeedbackCollectionProcess", trajectory: Trajectory
+        self: "FeedbackCollectionProcess", trajectory: Trajectory
     ) -> None:
         segments: List[Segment] = [
-            Segment(trajectory[i: i + SEGMENT_LENGTH])
+            Segment(trajectory[i : i + SEGMENT_LENGTH])
             for i in range(0, len(trajectory), SEGMENT_LENGTH)
         ]
         self.segment_db.store_segments(segments)
 
     def get_preference_from_segment_pair(
-            self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
+        self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
     ) -> str:
         border = np.zeros((CLIP_SIZE, CLIP_BORDER_WIDTH), dtype=np.uint8)
 
@@ -159,13 +158,17 @@ class FeedbackCollectionProcess(Process):
                     self.logger.info("No unqueried segment pair found.")
                     continue
                 segment_pair = maybe_segment_pair
-                self.logger.info("Found unqueried segment pair. Asking user for preference.")
+                self.logger.info(
+                    "Found unqueried segment pair. Asking user for preference."
+                )
                 preference = self.get_preference_from_segment_pair(segment_pair)
                 if preference == "I":
                     self.logger.info("User deemed segment pair incomparable.")
                     continue
                 mu = {"L": 0.0, "R": 1.0, "E": 0.5}[preference]
-                self.logger.info(f"User expressed preference: {preference}. Putting preference in queue.")
+                self.logger.info(
+                    f"User expressed preference: {preference}. Putting preference in queue."
+                )
                 self.preference_queue.put(
                     Preference(
                         segment1=segment_pair[0], segment2=segment_pair[1], mu=mu
