@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 from src.utils import Trajectory
 
-SEGMENT_LENGTH = 100
+SEGMENT_LENGTH = 25
 MS_PER_FRAME = 83
 CLIP_SIZE = 126
 CLIP_BORDER_WIDTH = 30
@@ -43,8 +43,8 @@ class Segment:
             ]
         )
 
-    def get_observations(self: "Segment") -> List[np.ndarray]:
-        return [p[0] for p in self.data]
+    def get_observations(self: "Segment") -> np.ndarray:
+        return np.array([p[0] for p in self.data]).astype(np.uint8)
 
 
 class SegmentDB:
@@ -88,10 +88,10 @@ def ask_for_evaluation(p_queue: ThreadQueue) -> None:
 
 class FeedbackCollectionProcess(Process):
     def __init__(
-        self: "FeedbackCollectionProcess",
-        preference_queue: Queue,
-        trajectory_queue: Queue,
-        stop_queue: Queue,
+            self: "FeedbackCollectionProcess",
+            preference_queue: Queue,
+            trajectory_queue: Queue,
+            stop_queue: Queue,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -102,17 +102,17 @@ class FeedbackCollectionProcess(Process):
         self.logger = logging.getLogger(self.name)
 
     def _update_segment_db(
-        self: "FeedbackCollectionProcess", trajectory: Trajectory
+            self: "FeedbackCollectionProcess", trajectory: Trajectory
     ) -> None:
         segments: List[Segment] = []
         for i in range(0, len(trajectory), SEGMENT_LENGTH):
-            trajectory_slice = trajectory[i : i + SEGMENT_LENGTH]
+            trajectory_slice = trajectory[i: i + SEGMENT_LENGTH]
             if len(trajectory_slice) == SEGMENT_LENGTH:
                 segments.append(Segment(trajectory_slice))
         self.segment_db.store_segments(segments)
 
     def get_preference_from_segment_pair(
-        self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
+            self: "FeedbackCollectionProcess", segment_pair: Tuple[Segment, Segment]
     ) -> str:
         border = np.zeros((CLIP_SIZE, CLIP_BORDER_WIDTH), dtype=np.uint8)
 

@@ -12,7 +12,7 @@ import torch.nn as nn
 
 BUFFER_SIZE = 3000
 EVALUATION_FREQ = 0.2
-MIN_COMPARISONS_FOR_TRAINING = 500
+MIN_COMPARISONS_FOR_TRAINING = 20
 
 
 class PreferenceBuffer:
@@ -44,25 +44,25 @@ class PreferenceBuffer:
             self.preferences[self.idx] = preference
         self.idx = (self.idx + 1) % self.buffer_size
 
-    def get_minibatches(self: "PreferenceBuffer", n=32) -> Iterator[List[Preference]]:
+    def get_minibatches(self: "PreferenceBuffer", n=4) -> Iterator[List[Preference]]:
         indices = np.random.permutation(list(range(0, self.number_of_preferences)))
 
         batch_start_index = 0
 
         while batch_start_index + n < len(self) + 1:
-            batch_indices = indices[batch_start_index : batch_start_index + n]
+            batch_indices = indices[batch_start_index: batch_start_index + n]
             minibatch = [self.preferences[i] for i in batch_indices]
             yield minibatch
             batch_start_index += n
 
     def save_to_file(
-        self: "PreferenceBuffer", filename: str = "../data/preferences"
+            self: "PreferenceBuffer", filename: str = "../data/preferences"
     ) -> None:
         with open(f"{filename}.ptk", "wb") as file:
             pickle.dump(self, file)
 
     def load_from_file(
-        self: "PreferenceBuffer", filename: str = "../data/preferences"
+            self: "PreferenceBuffer", filename: str = "../data/preferences"
     ) -> None:
         with open(f"{filename}.ptk", "rb") as file:
             loaded_buffer: PreferenceBuffer = pickle.load(file)
@@ -109,13 +109,13 @@ class RewardModel(torch.nn.Module):
 
 class RewardModellingProcess(Process):
     def __init__(
-        self: "RewardModellingProcess",
-        preference_queue: Queue,
-        reward_model_queue: Queue,
-        stop_queue: Queue,
-        preference_source: str = "",
-        preference_target: str = "",
-        save_buffers_every_n_preferences: int = 1,
+            self: "RewardModellingProcess",
+            preference_queue: Queue,
+            reward_model_queue: Queue,
+            stop_queue: Queue,
+            preference_source: str = "",
+            preference_target: str = "",
+            save_buffers_every_n_preferences: int = 10,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -149,7 +149,10 @@ class RewardModellingProcess(Process):
         except FileNotFoundError as e:
             self.logger.info(f"Error when trying to load preferences: {str(e)}")
             return
-        self.logger.info("Successfully loaded preferences.")
+        self.logger.info(
+            f"Successfully loaded {len(self.training_buffer)} preferences for training "
+            f"and {len(self.evaluation_buffer)} for evaluation."
+        )
 
     def _save_preference_buffers(self: "RewardModellingProcess") -> None:
         self.logger.info("Trying to save preferences to file.")
@@ -158,7 +161,7 @@ class RewardModellingProcess(Process):
         self.logger.info("Successfully saved collected preferences.")
 
     def run(
-        self: "RewardModellingProcess",
+            self: "RewardModellingProcess",
     ) -> None:
         self.logger.info("Starting reward modelling process.")
         if self.preference_source == "":
@@ -194,14 +197,14 @@ class RewardModellingProcess(Process):
                     self.evaluation_buffer.add(preference)
 
                 if (
-                    self.preference_target != ""
-                    and preference_count % self.save_buffers_every_n_preferences == 0
+                        self.preference_target != ""
+                        and preference_count % self.save_buffers_every_n_preferences == 0
                 ):
                     self._save_preference_buffers()
 
             if (
-                len(self.training_buffer) + len(self.evaluation_buffer)
-                < MIN_COMPARISONS_FOR_TRAINING
+                    len(self.training_buffer) + len(self.evaluation_buffer)
+                    < MIN_COMPARISONS_FOR_TRAINING
             ):
                 self.logger.info(
                     "Not enough preferences for training the reward model yet."
@@ -226,24 +229,32 @@ class RewardModellingProcess(Process):
         self.reward_model_queue.put(self.reward_model)
 
     def _get_loss_for_minibatch(
-        self: "RewardModellingProcess", minibatch
+            self: "RewardModellingProcess", minibatch
     ) -> torch.Tensor():
         estimated_rewards = []
         preference_distribution = []
 
         for preference in minibatch:
             r1 = torch.sum(
-                self.reward_model(torch.tensor(preference.segment1.get_observations()))
+                self.reward_model(
+                    torch.tensor(
+                        preference.segment1.get_observations(), dtype=torch.float32
+                    )
+                )
             )
             r2 = torch.sum(
-                self.reward_model(torch.tensor(preference.segment2.get_observations()))
+                self.reward_model(
+                    torch.tensor(
+                        preference.segment2.get_observations(), dtype=torch.float32
+                    )
+                )
             )
             estimated_rewards.append([r1, r2])
             preference_distribution.append([1.0 - preference.mu, preference.mu])
 
         loss = nn.CrossEntropyLoss()(
-            input=torch.tensor(estimated_rewards),
-            target=torch.tensor(preference_distribution),
+            input=torch.tensor(estimated_rewards, dtype=torch.float32),
+            target=torch.tensor(preference_distribution, dtype=torch.float32),
         )
 
         return loss
@@ -251,6 +262,8 @@ class RewardModellingProcess(Process):
     def train_reward_model_for_one_epoch(self: "RewardModellingProcess") -> None:
         for minibatch in self.training_buffer.get_minibatches():
             loss = self._get_loss_for_minibatch(minibatch)
+
+            self.logger.info(f"The training loss this epoch is {loss}.")
 
             self.reward_model_optimizer.zero_grad()
             loss.backward()

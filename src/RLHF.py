@@ -11,7 +11,7 @@ from src.loglistening import LogListener
 from src.preferences import FeedbackCollectionProcess
 from src.rewardmodelling import RewardModel, RewardModellingProcess
 
-SEGMENT_LENGTH = 100
+SEGMENT_LENGTH = 25
 TRAJECTORY_QUEUE_CAPACITY = 5
 
 
@@ -32,9 +32,9 @@ class RLHFWrapper(gym.Wrapper):
         self.log_listener = None
 
     def start_rlhf(
-        self: "RLHFWrapper",
-        preference_source: str = "",
-        preference_target: str = "",
+            self: "RLHFWrapper",
+            preference_source: str = "",
+            preference_target: str = "",
     ) -> None:
         log_queue = Queue()
 
