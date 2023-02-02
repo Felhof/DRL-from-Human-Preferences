@@ -14,7 +14,8 @@ import cv2
 import numpy as np
 from src.utils import Trajectory
 
-SEGMENT_LENGTH = 300
+SEGMENT_LENGTH = 100
+MS_PER_FRAME = 83
 CLIP_SIZE = 126
 CLIP_BORDER_WIDTH = 30
 TRAJECTORY_QUEUE_CAPACITY = 5
@@ -122,7 +123,7 @@ class FeedbackCollectionProcess(Process):
         evaluation_thread.start()
 
         cv2.namedWindow("ClipWindow")
-        while evaluation_thread.is_alive():
+        while p_queue.qsize() == 0:
             for framestack1, framestack2 in zip(clip1, clip2):
                 clip1_frame = framestack1[-1]
                 clip2_frame = framestack2[-1]
@@ -134,7 +135,7 @@ class FeedbackCollectionProcess(Process):
                 )
                 frame = np.hstack((clip1_frame, border, clip2_frame))
                 cv2.imshow("ClipWindow", frame)
-                cv2.waitKey(50)
+                cv2.waitKey(MS_PER_FRAME)
         cv2.destroyWindow("ClipWindow")
 
         preference = p_queue.get()
