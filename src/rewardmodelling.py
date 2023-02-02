@@ -12,7 +12,7 @@ import torch.nn as nn
 
 BUFFER_SIZE = 3000
 EVALUATION_FREQ = 0.2
-MIN_COMPARISONS_FOR_TRAINING = 20
+MIN_COMPARISONS_FOR_TRAINING = 500
 
 
 class PreferenceBuffer:
@@ -249,11 +249,11 @@ class RewardModellingProcess(Process):
                     )
                 )
             )
-            estimated_rewards.append([r1, r2])
+            estimated_rewards.append(torch.stack((r1, r2)))
             preference_distribution.append([1.0 - preference.mu, preference.mu])
 
         loss = nn.CrossEntropyLoss()(
-            input=torch.tensor(estimated_rewards, dtype=torch.float32),
+            input=torch.stack(estimated_rewards),
             target=torch.tensor(preference_distribution, dtype=torch.float32),
         )
 
