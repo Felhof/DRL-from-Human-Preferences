@@ -84,8 +84,8 @@ def feedback_collection_process(
 @pytest.fixture
 def queue_with_items(mocker):
     def _create_queue(items: List):
-        def empty():
-            return len(items) == 0
+        def qsize():
+            return len(items)
 
         def get():
             assert (
@@ -95,7 +95,7 @@ def queue_with_items(mocker):
             return item
 
         queue = mocker.Mock()
-        queue.empty = mocker.Mock(side_effect=empty)
+        queue.qsize = mocker.Mock(side_effect=qsize)
         queue.get = mocker.Mock(side_effect=get)
         queue.put = mocker.Mock()
 

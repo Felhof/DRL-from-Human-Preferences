@@ -7,6 +7,7 @@ import os
 from queue import Queue as ThreadQueue
 import sys
 from threading import Thread
+from time import sleep
 from typing import List, Tuple, Optional
 
 import cv2
@@ -152,7 +153,7 @@ class FeedbackCollectionProcess(Process):
         self.segment_db = SegmentDB()
 
         while True:
-            if not self.stop_queue.empty():
+            if self.stop_queue.qsize() != 0:
                 if self.stop_queue.get():
                     self.logger.info("Received stop signal.")
                     break
@@ -162,15 +163,22 @@ class FeedbackCollectionProcess(Process):
             )
 
             for _ in range(TRAJECTORY_QUEUE_CAPACITY):
-                if self.trajectory_queue.empty():
+                if self.trajectory_queue.qsize() == 0:
                     self.logger.info("No more trajectories in the trajectory queue.")
+                    sleep(1)
                     break
-
+                self.logger.info(
+                    f"There are approx. {self.trajectory_queue.qsize()} elements left in the trajectory queue."
+                )
                 trajectory = self.trajectory_queue.get()
                 self.logger.info(
                     "Got a trajectory from the trajectory queue and putting it in the DB."
                 )
                 self._update_segment_db(trajectory)
+
+            self.logger.info(
+                f"There are now {len(self.segment_db)} segments stored in the DB."
+            )
 
             if len(self.segment_db) > 1:
                 self.logger.info("Querying segment pair to ask for preference.")

@@ -31,9 +31,9 @@ class RLHFWrapper(gym.Wrapper):
         self.log_listener = None
 
     def start_rlhf(
-            self: "RLHFWrapper",
-            preference_source: str = "",
-            preference_target: str = "",
+        self: "RLHFWrapper",
+        preference_source: str = "",
+        preference_target: str = "",
     ) -> None:
         log_queue = Queue()
 
@@ -56,13 +56,13 @@ class RLHFWrapper(gym.Wrapper):
             reward_model_queue=self.reward_model_queue,
             stop_queue=self.stop_reward_modelling_queue,
             preference_source=preference_source,
-            preference_target=preference_target
+            preference_target=preference_target,
         )
         self.feedback_collecting_process.start()
         self.reward_modelling_process.start()
 
         while True:
-            if not self.reward_model_queue.empty():
+            if self.reward_model_queue.qsize() != 0:
                 self.logger.info("Got initialized reward model.")
                 self.reward_model = self.reward_model_queue.get()
                 break
@@ -78,7 +78,7 @@ class RLHFWrapper(gym.Wrapper):
         return observation
 
     def step(self: "RLHFWrapper", action):
-        if not self.reward_model_queue.empty():
+        if self.reward_model_queue.qsize() != 0:
             self.logger.info("Received new reward model from the queue.")
             self.reward_model = self.reward_model_queue.get()
 

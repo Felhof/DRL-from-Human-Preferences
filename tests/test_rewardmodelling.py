@@ -86,13 +86,13 @@ def runnable_reward_modelling_process(mocker, reward_modelling_process):
 
         if "preference_queue" not in kwargs:
             preference_queue = mocker.Mock()
-            preference_queue.empty = mocker.Mock(return_value=True)
+            preference_queue.qsize = mocker.Mock(return_value=0)
             kwargs["preference_queue"] = preference_queue
 
         if "stop_queue" not in kwargs:
             stop_queue = mocker.Mock()
-            stop_queue.empty = mocker.Mock(return_value=False)
-            stop_queue.get = mocker.Mock(side_effect=[False, True])
+            stop_queue.qsize = mocker.Mock(side_effect=[0, 1])
+            stop_queue.get = mocker.Mock(side_effect=[True])
             kwargs["stop_queue"] = stop_queue
 
         reward_modeller = reward_modelling_process(**kwargs)
@@ -227,9 +227,7 @@ def test_reward_modelling_process_run_gets_all_preferences_from_queue(
 ):
     # Given
     preference_queue = mocker.Mock()
-    preference_queue.empty = mocker.Mock(
-        side_effect=[False, False, False, False, False, False, True]
-    )
+    preference_queue.qsize = mocker.Mock(side_effect=[5, 5, 4, 3, 2, 1, 0])
     preference1 = mocker.Mock()
     preference2 = mocker.Mock()
     preference3 = mocker.Mock()

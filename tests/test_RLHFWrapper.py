@@ -100,7 +100,9 @@ def rlhf_with_reward_model_queue(mocker, rlhf_with_step):
 
         new_reward_model = mocker.Mock(side_effect=mock_new_reward_model)
         old_reward_model = mocker.Mock(side_effect=mock_old_reward_model)
-        reward_model_queue.empty = mocker.Mock(return_value=not new_model_available)
+        reward_model_queue.qsize = mocker.Mock(
+            return_value=1 if new_model_available else 0
+        )
         reward_model_queue.get = mocker.Mock(return_value=new_reward_model)
 
         rlhf_wrapper = rlhf_with_step(**kwargs)
@@ -143,7 +145,7 @@ def test_start_rlhf_starts_other_processes(mocker, rlhf_with_reward_model_queue)
         reward_model_queue=rlhf.reward_model_queue,
         stop_queue=rlhf.stop_reward_modelling_queue,
         preference_source="",
-        preference_target=""
+        preference_target="",
     )
     src.RLHF.FeedbackCollectionProcess.assert_called_once_with(
         preference_queue=preference_queue,

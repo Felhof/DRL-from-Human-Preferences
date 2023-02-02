@@ -50,19 +50,19 @@ class PreferenceBuffer:
         batch_start_index = 0
 
         while batch_start_index + n < len(self) + 1:
-            batch_indices = indices[batch_start_index: batch_start_index + n]
+            batch_indices = indices[batch_start_index : batch_start_index + n]
             minibatch = [self.preferences[i] for i in batch_indices]
             yield minibatch
             batch_start_index += n
 
     def save_to_file(
-            self: "PreferenceBuffer", filename: str = "../data/preferences"
+        self: "PreferenceBuffer", filename: str = "../data/preferences"
     ) -> None:
         with open(f"{filename}.ptk", "wb") as file:
             pickle.dump(self, file)
 
     def load_from_file(
-            self: "PreferenceBuffer", filename: str = "../data/preferences"
+        self: "PreferenceBuffer", filename: str = "../data/preferences"
     ) -> None:
         with open(f"{filename}.ptk", "rb") as file:
             loaded_buffer: PreferenceBuffer = pickle.load(file)
@@ -109,13 +109,13 @@ class RewardModel(torch.nn.Module):
 
 class RewardModellingProcess(Process):
     def __init__(
-            self: "RewardModellingProcess",
-            preference_queue: Queue,
-            reward_model_queue: Queue,
-            stop_queue: Queue,
-            preference_source: str = "",
-            preference_target: str = "",
-            save_buffers_every_n_preferences: int = 1,
+        self: "RewardModellingProcess",
+        preference_queue: Queue,
+        reward_model_queue: Queue,
+        stop_queue: Queue,
+        preference_source: str = "",
+        preference_target: str = "",
+        save_buffers_every_n_preferences: int = 1,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -143,7 +143,9 @@ class RewardModellingProcess(Process):
         self.logger.info("Trying to load preferences from file.")
         try:
             self.training_buffer.load_from_file(self.preference_source + "_training")
-            self.evaluation_buffer.load_from_file(self.preference_source + "_evaluation")
+            self.evaluation_buffer.load_from_file(
+                self.preference_source + "_evaluation"
+            )
         except FileNotFoundError as e:
             self.logger.info(f"Error when trying to load preferences: {str(e)}")
             return
@@ -156,7 +158,7 @@ class RewardModellingProcess(Process):
         self.logger.info("Successfully saved collected preferences.")
 
     def run(
-            self: "RewardModellingProcess",
+        self: "RewardModellingProcess",
     ) -> None:
         self.logger.info("Starting reward modelling process.")
         if self.preference_source == "":
@@ -167,16 +169,16 @@ class RewardModellingProcess(Process):
         preference_count = 0
         self.logger.info("Starting reward modelling loop.")
         while True:
-            if not self.stop_queue.empty():
+            if self.stop_queue.qsize() != 0:
                 if self.stop_queue.get():
                     self.logger.info("Received stop signal.")
                     break
 
-            if self.preference_queue.empty():
+            if self.preference_queue.qsize() == 0:
                 self.logger.info("No preferences available currently.")
                 sleep(5)
 
-            while not self.preference_queue.empty():
+            while self.preference_queue.qsize() != 0:
                 preference_count += 1
                 preference = self.preference_queue.get()
                 use_for_training = np.random.binomial(1, p=1 - EVALUATION_FREQ)
@@ -192,14 +194,14 @@ class RewardModellingProcess(Process):
                     self.evaluation_buffer.add(preference)
 
                 if (
-                        self.preference_target != ""
-                        and preference_count % self.save_buffers_every_n_preferences == 0
+                    self.preference_target != ""
+                    and preference_count % self.save_buffers_every_n_preferences == 0
                 ):
                     self._save_preference_buffers()
 
             if (
-                    len(self.training_buffer) + len(self.evaluation_buffer)
-                    < MIN_COMPARISONS_FOR_TRAINING
+                len(self.training_buffer) + len(self.evaluation_buffer)
+                < MIN_COMPARISONS_FOR_TRAINING
             ):
                 self.logger.info(
                     "Not enough preferences for training the reward model yet."
@@ -224,7 +226,7 @@ class RewardModellingProcess(Process):
         self.reward_model_queue.put(self.reward_model)
 
     def _get_loss_for_minibatch(
-            self: "RewardModellingProcess", minibatch
+        self: "RewardModellingProcess", minibatch
     ) -> torch.Tensor():
         estimated_rewards = []
         preference_distribution = []
