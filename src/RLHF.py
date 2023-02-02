@@ -30,7 +30,11 @@ class RLHFWrapper(gym.Wrapper):
         self.logger = None
         self.log_listener = None
 
-    def start_rlhf(self: "RLHFWrapper") -> None:
+    def start_rlhf(
+            self: "RLHFWrapper",
+            preference_source: str = "",
+            preference_target: str = "",
+    ) -> None:
         log_queue = Queue()
 
         self.log_listener = LogListener(queue=log_queue)
@@ -51,6 +55,8 @@ class RLHFWrapper(gym.Wrapper):
             preference_queue=preference_queue,
             reward_model_queue=self.reward_model_queue,
             stop_queue=self.stop_reward_modelling_queue,
+            preference_source=preference_source,
+            preference_target=preference_target
         )
         self.feedback_collecting_process.start()
         self.reward_modelling_process.start()

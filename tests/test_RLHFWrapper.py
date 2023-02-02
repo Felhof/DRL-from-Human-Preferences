@@ -142,6 +142,8 @@ def test_start_rlhf_starts_other_processes(mocker, rlhf_with_reward_model_queue)
         preference_queue=preference_queue,
         reward_model_queue=rlhf.reward_model_queue,
         stop_queue=rlhf.stop_reward_modelling_queue,
+        preference_source="",
+        preference_target=""
     )
     src.RLHF.FeedbackCollectionProcess.assert_called_once_with(
         preference_queue=preference_queue,
