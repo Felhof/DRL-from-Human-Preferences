@@ -1,6 +1,7 @@
 import logging
 import logging.handlers
 from multiprocessing import Process
+import pickle
 from time import sleep
 from typing import List, Iterator
 
@@ -20,6 +21,17 @@ class PreferenceBuffer:
         self.number_of_preferences = 0
         self.idx = 0
         self.buffer_size = buffer_size
+
+    def __eq__(self: "PreferenceBuffer", other: "PreferenceBuffer") -> bool:
+        if len(self.preferences) != len(other.preferences):
+            return False
+        if self.number_of_preferences != other.number_of_preferences:
+            return False
+        if self.idx != other.idx:
+            return False
+        if self.buffer_size != other.buffer_size:
+            return False
+        return all([p1 == p2 for p1, p2 in zip(self.preferences, other.preferences)])
 
     def __len__(self: "PreferenceBuffer") -> int:
         return self.number_of_preferences
@@ -42,6 +54,22 @@ class PreferenceBuffer:
             minibatch = [self.preferences[i] for i in batch_indices]
             yield minibatch
             batch_start_index += n
+
+    def save_to_file(
+        self: "PreferenceBuffer", filename: str = "../data/preferences"
+    ) -> None:
+        with open(f"{filename}.ptk", "wb") as file:
+            pickle.dump(self, file)
+
+    def load_from_file(
+        self: "PreferenceBuffer", filename: str = "../data/preferences"
+    ) -> None:
+        with open(f"{filename}.ptk", "rb") as file:
+            loaded_buffer: PreferenceBuffer = pickle.load(file)
+        self.preferences = loaded_buffer.preferences
+        self.number_of_preferences = loaded_buffer.number_of_preferences
+        self.idx = loaded_buffer.idx
+        self.buffer_size = loaded_buffer.buffer_size
 
 
 class RewardModel(torch.nn.Module):

@@ -30,6 +30,16 @@ class Segment:
     def __init__(self: "Segment", data: Trajectory) -> None:
         self.data = data
 
+    def __eq__(self: "Segment", other: "Segment") -> bool:
+        if len(self.data) != len(other.data):
+            return False
+        return all(
+            [
+                np.all(s[0] == o[0]) and np.all(s[0] == o[0])
+                for s, o in zip(self.data, other.data)
+            ]
+        )
+
     def get_observations(self: "Segment") -> List[np.ndarray]:
         return [p[0] for p in self.data]
 

@@ -1,10 +1,18 @@
+import os
+
 import numpy as np
 import pytest
 import torch
 
 import src.rewardmodelling
-from src.preferences import Preference
+from src.preferences import Preference, Segment
 from src.rewardmodelling import PreferenceBuffer, RewardModel, RewardModellingProcess
+
+
+@pytest.fixture()
+def cleanup_preference_data() -> None:
+    yield
+    os.remove(f"../data/preferences.ptk")
 
 
 @pytest.fixture
@@ -147,6 +155,38 @@ def test_preference_buffer_can_get_minibatches(mocker):
 
     # Then
     assert minibatches == [[p2, p5, p3], [p6, p1, p4]]
+
+
+def test_preference_buffer_can_save_and_load(cleanup_preference_data):
+    def create_random_trajectory(n=5):
+        return [(np.random.rand(2), np.random.rand(1)) for _ in range(n)]
+
+    segments = [Segment(create_random_trajectory()) for _ in range(6)]
+
+    preference1 = Preference(segment1=segments[0], segment2=segments[1], mu=0.0)
+    preference2 = Preference(
+        segment1=segments[2],
+        segment2=segments[3],
+        mu=0.5,
+    )
+    preference3 = Preference(segment1=segments[4], segment2=segments[5], mu=1.0)
+
+    preference_buffer1 = PreferenceBuffer(buffer_size=500)
+    preference_buffer1.add(preference1)
+    preference_buffer1.add(preference2)
+    preference_buffer1.add(preference3)
+    preference_buffer1.save_to_file()
+
+    preference_buffer2 = PreferenceBuffer()
+    preference_buffer2.load_from_file()
+
+    assert preference_buffer1.preferences == preference_buffer2.preferences
+    assert (
+        preference_buffer1.number_of_preferences
+        == preference_buffer2.number_of_preferences
+    )
+    assert preference_buffer1.idx == preference_buffer2.idx
+    assert preference_buffer1.buffer_size == preference_buffer2.buffer_size
 
 
 def test_reward_model_maps_observation_to_scalar():
