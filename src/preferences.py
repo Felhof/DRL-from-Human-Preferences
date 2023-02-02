@@ -30,6 +30,7 @@ class Preference:
 
 class Segment:
     def __init__(self: "Segment", data: Trajectory) -> None:
+        assert len(data) == SEGMENT_LENGTH
         self.data = data
 
     def __eq__(self: "Segment", other: "Segment") -> bool:
@@ -103,10 +104,11 @@ class FeedbackCollectionProcess(Process):
     def _update_segment_db(
         self: "FeedbackCollectionProcess", trajectory: Trajectory
     ) -> None:
-        segments: List[Segment] = [
-            Segment(trajectory[i : i + SEGMENT_LENGTH])
-            for i in range(0, len(trajectory), SEGMENT_LENGTH)
-        ]
+        segments: List[Segment] = []
+        for i in range(0, len(trajectory), SEGMENT_LENGTH):
+            trajectory_slice = trajectory[i : i + SEGMENT_LENGTH]
+            if len(trajectory_slice) == SEGMENT_LENGTH:
+                segments.append(Segment(trajectory_slice))
         self.segment_db.store_segments(segments)
 
     def get_preference_from_segment_pair(
@@ -116,6 +118,12 @@ class FeedbackCollectionProcess(Process):
 
         clip1 = segment_pair[0].get_observations()
         clip2 = segment_pair[1].get_observations()
+
+        if len(clip1) != len(clip2):
+            self.logger.error(
+                "ERRROR: Trying to compare two segments that do not have the same size"
+            )
+            raise ValueError("To get preferences, segments must have the same size.")
 
         p_queue = ThreadQueue()
 

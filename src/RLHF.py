@@ -11,6 +11,7 @@ from src.loglistening import LogListener
 from src.preferences import FeedbackCollectionProcess
 from src.rewardmodelling import RewardModel, RewardModellingProcess
 
+SEGMENT_LENGTH = 100
 TRAJECTORY_QUEUE_CAPACITY = 5
 
 
@@ -91,15 +92,19 @@ class RLHFWrapper(gym.Wrapper):
 
         if done:
             self.logger.info("Episode ended.")
-            if not self.trajectory_queue.full():
+            if self.trajectory_queue.full():
+                self.logger.info(
+                    "Trajectory queue is full. Dropping current trajectory."
+                )
+            elif len(self.current_trajectory) < SEGMENT_LENGTH:
+                self.logger.info(
+                    "Dropping current trajectory as it is shorter than one segment."
+                )
+            else:
                 self.logger.info(
                     "Putting the current trajectory in the trajectory queue."
                 )
                 self.trajectory_queue.put(self.current_trajectory)
-            else:
-                self.logger.info(
-                    "Trajectory queue is full. Dropping current trajectory."
-                )
             self.current_trajectory = []
 
         return obs, reward.item(), done, info
