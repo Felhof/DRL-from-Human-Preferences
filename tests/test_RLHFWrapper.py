@@ -114,7 +114,90 @@ def rlhf_with_reward_model_queue(mocker, rlhf_with_step):
     return _create_rlhf_with_reward_model_queue
 
 
-def test_start_rlhf_starts_other_processes(mocker, rlhf_with_reward_model_queue):
+def test_full_rlhf_executes_all_steps(mocker, rlhf_with_reward_model_queue):
+    # Given
+    rlhf = rlhf_with_reward_model_queue()
+    rlhf._start_other_processes = mocker.Mock()
+    rlhf._collect_initial_preferences = mocker.Mock()
+    rlhf._wait_for_pretraining_of_reward_model = mocker.Mock()
+
+    # When
+    rlhf.full_rlhf(preference_target="some_file")
+
+    # Then
+    rlhf._start_other_processes.assert_called_once_with(
+        mode="full_rlhf", preference_target="some_file"
+    )
+    rlhf._collect_initial_preferences.assert_called_once()
+    rlhf._wait_for_pretraining_of_reward_model.assert_called_once()
+
+
+def test_only_collect_initial_preferences_collects_initial_preferences_and_then_stops(
+    mocker, rlhf_with_reward_model_queue
+):
+    # Given
+    rlhf = rlhf_with_reward_model_queue()
+    rlhf._start_other_processes = mocker.Mock()
+    rlhf._collect_initial_preferences = mocker.Mock()
+    rlhf._wait_for_pretraining_of_reward_model = mocker.Mock()
+    rlhf.stop = mocker.Mock()
+
+    # When
+    rlhf.only_collect_initial_preferences(preference_target="some_file")
+
+    # Then
+    rlhf._start_other_processes.assert_called_once_with(
+        mode="collect_initial_preferences", preference_target="some_file"
+    )
+    rlhf._collect_initial_preferences.assert_called_once()
+    assert rlhf._wait_for_pretraining_of_reward_model.call_count == 0
+    rlhf.stop.assert_called_once()
+
+
+def test_can_start_with_pretraining(mocker, rlhf_with_reward_model_queue):
+    # Given
+    rlhf = rlhf_with_reward_model_queue()
+    rlhf._start_other_processes = mocker.Mock()
+    rlhf._collect_initial_preferences = mocker.Mock()
+    rlhf._wait_for_pretraining_of_reward_model = mocker.Mock()
+    rlhf.stop = mocker.Mock()
+
+    # When
+    rlhf.rlhf_starting_with_pretraining(
+        preference_source="source_file", preference_target="target_file"
+    )
+
+    # Then
+    rlhf._start_other_processes.assert_called_once_with(
+        mode="start_with_pretraining",
+        preference_target="target_file",
+        preference_source="source_file",
+    )
+    rlhf._wait_for_pretraining_of_reward_model.assert_called_once()
+    assert rlhf._collect_initial_preferences.call_count == 0
+
+
+def test_collect_initial_preferences_takes_random_actions_until_enough_initial_preferences_are_collected(
+    mocker, rlhf_with_reward_model_queue
+):
+    # Given
+    rlhf = rlhf_with_reward_model_queue()
+    rlhf.reset = mocker.Mock()
+    rlhf.collected_initial_preferences_queue.qsize = mocker.Mock(
+        side_effect=[0, 0, 0, 1]
+    )
+    rlhf.environment.action_space.sample = mocker.Mock(side_effect=[1, 2, 3])
+    rlhf._step = mocker.Mock(return_value=(None, None, None, None))
+
+    # When
+    rlhf._collect_initial_preferences()
+
+    # Then
+    rlhf.reset.assert_called_once()
+    rlhf._step.assert_has_calls([mocker.call(1), mocker.call(2), mocker.call(3)])
+
+
+def test_rlhf_wrapper_can_start_other_processes(mocker, rlhf_with_reward_model_queue):
     # Given
     log_listener = mocker.Mock()
     reward_modelling_process = mocker.Mock()
@@ -135,8 +218,8 @@ def test_start_rlhf_starts_other_processes(mocker, rlhf_with_reward_model_queue)
     mocker.patch("src.RLHF.logging.getLogger", return_value=mocker.Mock())
 
     # When
-    rlhf = rlhf_with_reward_model_queue(new_model_available=True)
-    rlhf.start_rlhf()
+    rlhf = rlhf_with_reward_model_queue()
+    rlhf._start_other_processes()
 
     # Then
     log_listener.start.assert_called_once()
@@ -146,6 +229,8 @@ def test_start_rlhf_starts_other_processes(mocker, rlhf_with_reward_model_queue)
         stop_queue=rlhf.stop_reward_modelling_queue,
         preference_source="",
         preference_target="",
+        collected_initial_preferences_queue=rlhf.collected_initial_preferences_queue,
+        mode="full_rlhf",
     )
     src.RLHF.FeedbackCollectionProcess.assert_called_once_with(
         preference_queue=preference_queue,
@@ -283,6 +368,7 @@ def test_step_when_done_sends_current_trajectory_to_feedback_process(
     trajectory_queue.put = mocker.Mock()
     trajectory_queue.full = mocker.Mock(return_value=trajectory_queue_is_full)
     current_trajectory = mocker.Mock()
+    current_trajectory.__len__ = mocker.Mock(return_value=50)
 
     rlhf_wrapper = rlhf_with_reward_model_queue(
         action=action,
