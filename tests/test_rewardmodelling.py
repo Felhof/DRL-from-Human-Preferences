@@ -18,13 +18,14 @@ def cleanup_preference_data() -> None:
 @pytest.fixture
 def reward_modelling_process(mocker):
     def _create_reward_modelling_process(
-            preference_queue=None,
-            reward_model=None,
-            reward_model_queue=None,
-            stop_queue=None,
-            training_buffer=None,
-            evaluation_buffer=None,
-            reward_model_optimizer=None,
+        preference_queue=None,
+        reward_model=None,
+        reward_model_queue=None,
+        stop_queue=None,
+        training_buffer=None,
+        evaluation_buffer=None,
+        reward_model_optimizer=None,
+        collected_initial_preferences_queue=None,
     ):
         if preference_queue is None:
             preference_queue = mocker.Mock()
@@ -47,6 +48,9 @@ def reward_modelling_process(mocker):
         if reward_model_optimizer is None:
             reward_model_optimizer = mocker.Mock()
 
+        if collected_initial_preferences_queue is None:
+            collected_initial_preferences_queue = mocker.Mock()
+
         mocker.patch(
             "src.rewardmodelling.RewardModel",
             return_value=reward_model if reward_model is not None else mocker.Mock(),
@@ -67,7 +71,10 @@ def reward_modelling_process(mocker):
         mocker.patch("src.preferences.logging.getLogger", return_value=mocker.Mock())
 
         reward_modeller = RewardModellingProcess(
-            preference_queue, reward_model_queue, stop_queue
+            preference_queue=preference_queue,
+            reward_model_queue=reward_model_queue,
+            stop_queue=stop_queue,
+            collected_initial_preferences_queue=collected_initial_preferences_queue,
         )
 
         return reward_modeller
@@ -102,7 +109,7 @@ def runnable_reward_modelling_process(mocker, reward_modelling_process):
 
 
 def test_preference_buffer_can_add_new_items_up_to_buffer_size_and_loops_afterwards(
-        mocker,
+    mocker,
 ):
     # Given
     p1 = mocker.Mock()
@@ -157,7 +164,9 @@ def test_preference_buffer_can_get_minibatches(mocker):
     assert minibatches == [[p2, p5, p3], [p6, p1, p4]]
 
 
-def test_preference_buffer_can_save_and_load(cleanup_preference_data):
+def test_preference_buffer_can_save_and_load(cleanup_preference_data, mocker):
+    mocker.patch("src.preferences.SEGMENT_LENGTH", 5)
+
     def create_random_trajectory(n=5):
         return [(np.random.rand(2), np.random.rand(1)) for _ in range(n)]
 
@@ -182,8 +191,8 @@ def test_preference_buffer_can_save_and_load(cleanup_preference_data):
 
     assert preference_buffer1.preferences == preference_buffer2.preferences
     assert (
-            preference_buffer1.number_of_preferences
-            == preference_buffer2.number_of_preferences
+        preference_buffer1.number_of_preferences
+        == preference_buffer2.number_of_preferences
     )
     assert preference_buffer1.idx == preference_buffer2.idx
     assert preference_buffer1.buffer_size == preference_buffer2.buffer_size
@@ -203,121 +212,98 @@ def test_reward_model_maps_observation_to_scalar():
     assert predictions.shape
 
 
-def test_reward_modelling_process_puts_initial_reward_model_in_queue(
-        mocker, reward_modelling_process
-):
-    # Given
-    reward_model = mocker.Mock()
-    reward_model_queue = mocker.Mock()
-    reward_model_queue.put = mocker.Mock()
-
-    # When
-    reward_modeller = reward_modelling_process(
-        reward_model=reward_model, reward_model_queue=reward_model_queue
-    )
-
-    # Then
-    assert reward_modeller.reward_model == reward_model
-    assert reward_modeller.reward_model_queue == reward_model_queue
-    reward_modeller.reward_model_queue.put.assert_called_once_with(reward_model)
-
-
-def test_reward_modelling_process_run_gets_all_preferences_from_queue(
-        mocker, runnable_reward_modelling_process
+def test_reward_modelling_process_can_collect_initial_preferences(
+    mocker, runnable_reward_modelling_process
 ):
     # Given
     preference_queue = mocker.Mock()
-    preference_queue.qsize = mocker.Mock(side_effect=[5, 5, 4, 3, 2, 1, 0])
-    preference1 = mocker.Mock()
-    preference2 = mocker.Mock()
-    preference3 = mocker.Mock()
-    preference4 = mocker.Mock()
-    preference5 = mocker.Mock()
-    preference_queue.get = mocker.Mock(
-        side_effect=[preference1, preference2, preference3, preference4, preference5]
-    )
+    preference_queue.qsize = mocker.Mock(side_effect=[5, 4, 3, 2, 1, 0])
 
-    training_buffer = mocker.Mock()
-    training_buffer.add = mocker.Mock()
-    training_buffer.__len__ = mocker.Mock(return_value=1)
-    evaluation_buffer = mocker.Mock()
-    evaluation_buffer.add = mocker.Mock()
-    evaluation_buffer.__len__ = mocker.Mock(return_value=1)
+    preferences = [mocker.Mock() for _ in range(5)]
+    preference_queue.get = mocker.Mock(side_effect=preferences)
 
-    # When
+    use_for_training = [1, 0, 1, 1, 1]
+
+    cip_queue = mocker.Mock()
+
     reward_modelling_process = runnable_reward_modelling_process(
         preference_queue=preference_queue,
-        training_buffer=training_buffer,
-        evaluation_buffer=evaluation_buffer,
-        use_for_training=[1, 1, 1, 0, 1],
+        collected_initial_preferences_queue=cip_queue,
+        use_for_training=use_for_training,
     )
-    reward_modelling_process.run()
+    reward_modelling_process._save_preference_buffers = mocker.Mock()
+    reward_modelling_process._number_of_stored_preferences = mocker.Mock(
+        side_effect=[0, 1, 2, 3, 4, 5]
+    )
+
+    # When
+    reward_modelling_process._collect_initial_preferences(n=5)
 
     # Then
-    assert preference_queue.get.call_count == 5
-    assert training_buffer.add.call_count == 4
-    preferences_added_to_training_buffer = [
-        call_args.args[0] for call_args in training_buffer.add.call_args_list
-    ]
-    assert preferences_added_to_training_buffer[0] == preference1
-    assert preferences_added_to_training_buffer[1] == preference2
-    assert preferences_added_to_training_buffer[2] == preference3
-    assert preferences_added_to_training_buffer[3] == preference5
-    assert evaluation_buffer.add.call_count == 1
-    assert evaluation_buffer.add.call_args.args[0] == preference4
-
-
-def test_reward_modelling_process_run_does_not_train_when_not_enough_comparisons_are_available(
-        mocker, runnable_reward_modelling_process
-):
-    training_buffer = mocker.Mock()
-    training_buffer.__len__ = mocker.Mock(return_value=399)
-    evaluation_buffer = mocker.Mock()
-    evaluation_buffer.__len__ = mocker.Mock(return_value=100)
-
-    reward_modelling_process = runnable_reward_modelling_process(
-        training_buffer=training_buffer, evaluation_buffer=evaluation_buffer
+    training_buffer_add_calls = (
+        reward_modelling_process.training_buffer.add.call_args_list
     )
-    reward_modelling_process.train_reward_model_for_one_epoch = mocker.Mock()
+    evaluation_buffer_add_calls = (
+        reward_modelling_process.evaluation_buffer.add.call_args_list
+    )
+    assert training_buffer_add_calls[0].args[0] == preferences[0]
+    assert training_buffer_add_calls[1].args[0] == preferences[2]
+    assert training_buffer_add_calls[2].args[0] == preferences[3]
+    assert training_buffer_add_calls[3].args[0] == preferences[4]
+    assert evaluation_buffer_add_calls[0].args[0] == preferences[1]
+    reward_modelling_process._save_preference_buffers.assert_called_once()
 
-    reward_modelling_process.run()
 
-    assert reward_modelling_process.train_reward_model_for_one_epoch.call_count == 0
-
-
-@pytest.mark.parametrize(
-    "has_completed_pretraining, trained_for_epochs", [(False, 200), (True, 1)]
-)
-def test_reward_modelling_process_run_trains_reward_model_when_enough_preferences_are_available(
-        has_completed_pretraining,
-        trained_for_epochs,
-        mocker,
-        runnable_reward_modelling_process,
+def test_reward_modelling_process_can_pretrain_reward_model(
+    mocker, runnable_reward_modelling_process
 ):
-    training_buffer = mocker.Mock()
-    training_buffer.__len__ = mocker.Mock(return_value=400)
-    evaluation_buffer = mocker.Mock()
-    evaluation_buffer.__len__ = mocker.Mock(return_value=100)
-    reward_model = mocker.Mock()
-    reward_model.has_completed_pretraining = has_completed_pretraining
+    # Given
     reward_model_queue = mocker.Mock()
     reward_model_queue.put = mocker.Mock()
 
     reward_modelling_process = runnable_reward_modelling_process(
-        reward_model=reward_model,
-        training_buffer=training_buffer,
-        evaluation_buffer=evaluation_buffer,
-        reward_model_queue=reward_model_queue,
+        reward_model_queue=reward_model_queue
+    )
+    reward_modelling_process.preference_source = "test"
+    reward_modelling_process.train_reward_model_for_one_epoch = mocker.Mock()
+    reward_modelling_process._collect_initial_preferences = mocker.Mock()
+    reward_modelling_process._load_preference_buffers = mocker.Mock()
+    reward_modelling_process._reward_model_training_loop = mocker.Mock()
+    reward_modelling_process.evaluate_model = mocker.Mock()
+
+    # When
+    reward_modelling_process.run()
+
+    # Then
+    assert reward_modelling_process.train_reward_model_for_one_epoch.call_count == 5
+    assert reward_modelling_process.evaluate_model.call_count == 5
+    reward_model_queue.put.assert_called_once()
+
+
+def test_reward_modelling_training_loop_gets_preference_from_queue_and_updates_reward_model(
+    mocker, runnable_reward_modelling_process
+):
+    # Given
+    stop_queue = mocker.Mock()
+    stop_queue.qsize = mocker.Mock(side_effect=[0] * 32 + [1])
+    stop_queue.get = mocker.Mock(return_value=True)
+
+    reward_modelling_process = runnable_reward_modelling_process(stop_queue=stop_queue)
+
+    reward_modelling_process._try_to_store_preference_from_queue_in_buffer = (
+        mocker.Mock(return_value=True)
     )
     reward_modelling_process.train_reward_model_for_one_epoch = mocker.Mock()
 
-    reward_modelling_process.run()
+    # When
+    reward_modelling_process._reward_model_training_loop()
 
+    # Then
     assert (
-            reward_modelling_process.train_reward_model_for_one_epoch.call_count
-            == trained_for_epochs
+        reward_modelling_process._try_to_store_preference_from_queue_in_buffer.call_count
+        == 32
     )
-    reward_model_queue.put.assert_called_with(reward_model)
+    reward_modelling_process.train_reward_model_for_one_epoch.assert_called_once()
 
 
 def test_reward_modelling_process_can_train_reward(mocker, reward_modelling_process):
@@ -375,6 +361,8 @@ def test_reward_modelling_process_can_train_reward(mocker, reward_modelling_proc
     )
     reward_modeller.evaluate_model = mocker.Mock()
 
+    mocker.patch("src.rewardmodelling.np.mean")
+
     # When
     reward_modeller.train_reward_model_for_one_epoch()
 
@@ -385,4 +373,3 @@ def test_reward_modelling_process_can_train_reward(mocker, reward_modelling_proc
     loss.backward.assert_called_once()
     reward_modeller.reward_model_optimizer.zero_grad.assert_called_once()
     reward_modeller.reward_model_optimizer.step.assert_called_once()
-    reward_modeller.evaluate_model.assert_called_once()
