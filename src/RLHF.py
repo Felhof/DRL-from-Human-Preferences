@@ -89,6 +89,9 @@ class RLHFWrapper(gym.Wrapper):
             self.reward_model.eval()
 
         obs, reward, done, info = self._step(action)
+        reward = self.reward_model(
+            torch.tensor(np.array(obs), dtype=torch.float32)
+        ).item()
 
         return obs, reward, done, info
 
@@ -151,8 +154,7 @@ class RLHFWrapper(gym.Wrapper):
     def _step(self: "RLHFWrapper", action):
         self.current_trajectory.append((self.current_observation, action))
 
-        obs, _, done, info = self.environment.step(action)
-        reward = self.reward_model(torch.tensor(np.array(obs), dtype=torch.float32))
+        obs, reward, done, info = self.environment.step(action)
 
         self.current_observation = np.array(obs)
 
@@ -173,7 +175,7 @@ class RLHFWrapper(gym.Wrapper):
                 self.trajectory_queue.put(self.current_trajectory)
             self.current_trajectory = []
 
-        return obs, reward.item(), done, info
+        return obs, reward, done, info
 
     def _wait_for_pretraining_of_reward_model(self: "RLHFWrapper") -> None:
         while True:
