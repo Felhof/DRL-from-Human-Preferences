@@ -50,19 +50,19 @@ class PreferenceBuffer:
         batch_start_index = 0
 
         while batch_start_index + n < len(self) + 1:
-            batch_indices = indices[batch_start_index: batch_start_index + n]
+            batch_indices = indices[batch_start_index : batch_start_index + n]
             minibatch = [self.preferences[i] for i in batch_indices]
             yield minibatch
             batch_start_index += n
 
     def save_to_file(
-            self: "PreferenceBuffer", filename: str = "../data/preferences"
+        self: "PreferenceBuffer", filename: str = "../data/preferences"
     ) -> None:
         with open(f"{filename}.ptk", "wb") as file:
             pickle.dump(self, file)
 
     def load_from_file(
-            self: "PreferenceBuffer", filename: str = "../data/preferences"
+        self: "PreferenceBuffer", filename: str = "../data/preferences"
     ) -> None:
         with open(f"{filename}.ptk", "rb") as file:
             loaded_buffer: PreferenceBuffer = pickle.load(file)
@@ -109,15 +109,15 @@ class RewardModel(torch.nn.Module):
 
 class RewardModellingProcess(Process):
     def __init__(
-            self: "RewardModellingProcess",
-            preference_queue: Queue,
-            reward_model_queue: Queue,
-            stop_queue: Queue,
-            collected_initial_preferences_queue: Queue,
-            mode: str = "full_rlhf",
-            preference_source: str = "",
-            preference_target: str = "",
-            save_buffers_every_n_preferences: int = 50,
+        self: "RewardModellingProcess",
+        preference_queue: Queue,
+        reward_model_queue: Queue,
+        stop_queue: Queue,
+        collected_initial_preferences_queue: Queue,
+        mode: str = "full_rlhf",
+        preference_source: str = "",
+        preference_target: str = "",
+        save_buffers_every_n_preferences: int = 50,
     ) -> None:
         super().__init__()
         self.preference_queue = preference_queue
@@ -150,10 +150,10 @@ class RewardModellingProcess(Process):
                 sleep(1)
                 continue
             if (
-                    self.preference_target != ""
-                    and self._number_of_stored_preferences()
-                    % self.save_buffers_every_n_preferences
-                    == 0
+                self.preference_target != ""
+                and self._number_of_stored_preferences()
+                % self.save_buffers_every_n_preferences
+                == 0
             ):
                 self._save_preference_buffers()
 
@@ -176,7 +176,7 @@ class RewardModellingProcess(Process):
         return loss
 
     def _get_loss_for_minibatch(
-            self: "RewardModellingProcess", minibatch
+        self: "RewardModellingProcess", minibatch
     ) -> torch.Tensor():
         estimated_rewards = []
         preference_distribution = []
@@ -226,7 +226,7 @@ class RewardModellingProcess(Process):
         return len(self.training_buffer) + len(self.evaluation_buffer)
 
     def _pretrain_reward_model(
-            self: "RewardModellingProcess", n_pretraining_epochs=5
+        self: "RewardModellingProcess", n_pretraining_epochs=5
     ) -> None:
         for epoch in range(n_pretraining_epochs):
             self.logger.info(
@@ -267,10 +267,10 @@ class RewardModellingProcess(Process):
             )
 
             if (
-                    self.preference_target != ""
-                    and self._number_of_stored_preferences()
-                    % self.save_buffers_every_n_preferences
-                    == 0
+                self.preference_target != ""
+                and self._number_of_stored_preferences()
+                % self.save_buffers_every_n_preferences
+                == 0
             ):
                 self._save_preference_buffers()
 
@@ -283,6 +283,8 @@ class RewardModellingProcess(Process):
             self.logger.info("Updating reward model by training for one epoch.")
             received_preferences_since_last_update = 0
             self._train_reward_model_for_one_epoch()
+            self._evaluate_model()
+            self.reward_model_queue.put(self.reward_model)
 
     def _save_preference_buffers(self: "RewardModellingProcess") -> None:
         self.logger.info("Trying to save preferences to file.")
@@ -306,7 +308,7 @@ class RewardModellingProcess(Process):
         print(f"The mean training loss this epoch was {np.mean(batch_losses)}.")
 
     def _try_to_store_preference_from_queue_in_buffer(
-            self: "RewardModellingProcess",
+        self: "RewardModellingProcess",
     ) -> bool:
         self.logger.info("Trying to get a new preference from the preference queue.")
         if self.preference_queue.qsize() != 0:
@@ -326,7 +328,7 @@ class RewardModellingProcess(Process):
             return False
 
     def run(
-            self: "RewardModellingProcess",
+        self: "RewardModellingProcess",
     ) -> None:
         self.logger.info("Starting reward modelling process.")
 
@@ -342,5 +344,5 @@ class RewardModellingProcess(Process):
             self._load_preference_buffers()
             self._pretrain_reward_model()
 
-        if self.mode == "full_rlhf":
+        if self.mode == "full_rlhf" or self.mode == "start_with_pretraining":
             self._reward_model_training_loop()

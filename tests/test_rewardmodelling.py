@@ -265,18 +265,18 @@ def test_reward_modelling_process_can_pretrain_reward_model(
         reward_model_queue=reward_model_queue
     )
     reward_modelling_process.preference_source = "test"
-    reward_modelling_process.train_reward_model_for_one_epoch = mocker.Mock()
+    reward_modelling_process._train_reward_model_for_one_epoch = mocker.Mock()
     reward_modelling_process._collect_initial_preferences = mocker.Mock()
     reward_modelling_process._load_preference_buffers = mocker.Mock()
     reward_modelling_process._reward_model_training_loop = mocker.Mock()
-    reward_modelling_process.evaluate_model = mocker.Mock()
+    reward_modelling_process._evaluate_model = mocker.Mock()
 
     # When
     reward_modelling_process.run()
 
     # Then
-    assert reward_modelling_process.train_reward_model_for_one_epoch.call_count == 5
-    assert reward_modelling_process.evaluate_model.call_count == 5
+    assert reward_modelling_process._train_reward_model_for_one_epoch.call_count == 5
+    assert reward_modelling_process._evaluate_model.call_count == 5
     reward_model_queue.put.assert_called_once()
 
 
@@ -293,7 +293,9 @@ def test_reward_modelling_training_loop_gets_preference_from_queue_and_updates_r
     reward_modelling_process._try_to_store_preference_from_queue_in_buffer = (
         mocker.Mock(return_value=True)
     )
-    reward_modelling_process.train_reward_model_for_one_epoch = mocker.Mock()
+    reward_modelling_process._train_reward_model_for_one_epoch = mocker.Mock()
+    reward_modelling_process._evaluate_model = mocker.Mock()
+    reward_modelling_process.reward_model_queue.put = mocker.Mock()
 
     # When
     reward_modelling_process._reward_model_training_loop()
@@ -303,7 +305,9 @@ def test_reward_modelling_training_loop_gets_preference_from_queue_and_updates_r
         reward_modelling_process._try_to_store_preference_from_queue_in_buffer.call_count
         == 32
     )
-    reward_modelling_process.train_reward_model_for_one_epoch.assert_called_once()
+    reward_modelling_process._train_reward_model_for_one_epoch.assert_called_once()
+    reward_modelling_process._evaluate_model.assert_called_once()
+    reward_modelling_process.reward_model_queue.put.assert_called_once()
 
 
 def test_reward_modelling_process_can_train_reward(mocker, reward_modelling_process):
@@ -359,12 +363,12 @@ def test_reward_modelling_process_can_train_reward(mocker, reward_modelling_proc
         reward_model=reward_model,
         reward_model_optimizer=reward_model_optimizer,
     )
-    reward_modeller.evaluate_model = mocker.Mock()
+    reward_modeller._evaluate_model = mocker.Mock()
 
     mocker.patch("src.rewardmodelling.np.mean")
 
     # When
-    reward_modeller.train_reward_model_for_one_epoch()
+    reward_modeller._train_reward_model_for_one_epoch()
 
     # Then
     ce_kwargs = src.rewardmodelling.nn.CrossEntropyLoss.__call__.call_args.kwargs
